@@ -18,6 +18,8 @@ public class TipMenuUI : UIBase<TipMenuUI>
             Exit(() =>
             {
                 MainMenuUI.instance.Enter();
+                StartCoroutine(DisplayBtnExit());
+                StopCoroutine(DisplayBtnExit());
             });
         });
     }

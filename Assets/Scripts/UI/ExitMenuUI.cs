@@ -17,6 +17,8 @@ public class ExitMenuUI : UIBase<ExitMenuUI>
             Exit(() =>
             {
                 MainMenuUI.instance.Enter();
+                StartCoroutine(DisplayBtnExit());
+                StopCoroutine(DisplayBtnExit());
             });
         });
     }

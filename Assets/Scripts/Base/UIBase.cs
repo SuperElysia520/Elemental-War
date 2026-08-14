@@ -87,4 +87,10 @@ public abstract class UIBase<T> : SingleMonoBase<T> where T : UIBase<T>
     /// 恢复所有按钮
     /// </summary>
     protected abstract void ResumeButtons();
+    
+    public IEnumerator DisplayBtnExit()
+    {
+        yield return new WaitForSeconds(0.65f);
+        MainMenuUI.instance.btnExit.gameObject.SetActive(true);
+    }
 }

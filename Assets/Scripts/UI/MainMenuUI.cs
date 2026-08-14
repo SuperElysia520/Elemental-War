@@ -37,10 +37,14 @@ public class MainMenuUI : UIBase<MainMenuUI>
         btnAchievements.onClick.AddListener(ShowTipMenu);
         btnAuthor.onClick.AddListener(ShowTipMenu);
         btnLanguage.onClick.AddListener(ShowTipMenu);
-        btnVoice.onClick.AddListener(ShowTipMenu);
+        btnVoice.onClick.AddListener(ShowTipMenu); // 先Exit主菜单，在Enter提示菜单
         btnExit.onClick.AddListener((() =>
         {
-            ExitMenuUI.instance.Enter();
+            Exit(() =>
+            {
+                ExitMenuUI.instance.Enter();
+                btnExit.gameObject.SetActive(false);
+            });
         }));
     }
 
@@ -52,9 +56,10 @@ public class MainMenuUI : UIBase<MainMenuUI>
     
     private void ShowTipMenu()
     {
-        Exit(() =>
+        Exit(() => // 主菜单先播放FadeOut
         {
-            TipMenuUI.instance.Enter();
+            TipMenuUI.instance.Enter(); // 之后提示菜单播放FadeIn
+            btnExit.gameObject.SetActive(false); // 隐藏退出按钮
         });
     }
 
