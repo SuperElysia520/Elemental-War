@@ -24,7 +24,7 @@ public class MainMenuUI : UIBase<MainMenuUI>
     protected override void Awake()
     {
         base.Awake();
-        btnOnline.onClick.AddListener(ShowTipMenu);
+        btnOnline.onClick.AddListener(ShowLobbyMenu);
         btnContinue.onClick.AddListener(ShowTipMenu);
         btnNewGame.onClick.AddListener(() =>
         {
@@ -59,6 +59,15 @@ public class MainMenuUI : UIBase<MainMenuUI>
         Exit(() => // 主菜单先播放FadeOut
         {
             TipMenuUI.instance.Enter(); // 之后提示菜单播放FadeIn
+            btnExit.gameObject.SetActive(false); // 隐藏退出按钮
+        });
+    }
+
+    private void ShowLobbyMenu()
+    {
+        Exit(() => // 主菜单先播放FadeOut
+        {
+            LobbyMenuUI.instance.Enter(); // 之后大厅菜单播放FadeIn
             btnExit.gameObject.SetActive(false); // 隐藏退出按钮
         });
     }
