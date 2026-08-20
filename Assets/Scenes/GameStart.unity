@@ -3572,6 +3572,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   broadcastInterval: 1
   roomTimeout: 4
+  dedicatedQueryInterval: 1
 --- !u!114 &638794296
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3589,6 +3590,9 @@ MonoBehaviour:
     type: 3}
   maxPlayers: 3
   pvpMaxPlayers: 10
+  dedicatedServerAddress: 8.137.153.61
+  dedicatedServerPort: 7777
+  dedicatedServerRoomCount: 5
   discovery: {fileID: 638794295}
   playerName: 
   playerPrefabResourcePaths:
@@ -10384,7 +10388,7 @@ GameObject:
   - component: {fileID: 2071931272}
   - component: {fileID: 2071931275}
   m_Layer: 9
-  m_Name: PVELobbyMenu
+  m_Name: LobbyMenu
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -17396,6 +17400,9 @@ MonoBehaviour:
   bulletSparkPrefab: {fileID: 1238843893459588, guid: df1a1922af2b37e4f9ade4203d8566bd,
     type: 3}
   bulletInterval: 0.15
+  magazineSize: 30
+  autoReloadDelay: 0.1
+  fallbackReloadDuration: 3
   damage: 34
   range: 250
   hitMask:
@@ -17405,6 +17412,16 @@ MonoBehaviour:
   limbDamageMultiplier: 0.75
   fallbackHeadHeight: 0.78
   fallbackLimbHeight: 0.32
+  singleShotSound: {fileID: 0}
+  sustainedFireSound: {fileID: 0}
+  emptyReloadSound: {fileID: 0}
+  partialReloadSound: {fileID: 0}
+  singleShotVolume: 1
+  sustainedFireVolume: 0.18
+  sustainedFireStartShot: 3
+  soundFadeSpeed: 8
+  remoteMinDistance: 4
+  remoteMaxDistance: 60
   baseSpread: 0.08
   moveSpreadPenalty: 0.85
   sprintSpreadPenalty: 2.5

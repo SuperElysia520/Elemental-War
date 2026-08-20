@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using Unity.Collections;
 using Unity.Netcode;
 
@@ -63,6 +64,7 @@ public class LobbyState : NetworkBehaviour
     public const int PvpTeamCapacity = 5;
     public const int PvpCharacterCount = 3;
     public const int PvpKillTarget = 40;
+    public const ulong NoRoomOwner = ulong.MaxValue;
 
     /// <summary>PVE 原有成员列表（按加入顺序，索引 0 = 房主）。</summary>
     public NetworkList<FixedString64Bytes> PlayerNames = new NetworkList<FixedString64Bytes>();
@@ -79,6 +81,11 @@ public class LobbyState : NetworkBehaviour
     /// <summary>PVP 专用成员及分队数据，不参与 PVE 房间逻辑。</summary>
     public NetworkList<LobbyPlayerData> PvpPlayers = new NetworkList<LobbyPlayerData>();
 
+    /// <summary>
+    /// PVP 房间管理员。Dedicated Server 才是网络服务器，创建房间的玩家只通过这个 ClientId 获得开局权限。
+    /// </summary>
+    public NetworkVariable<ulong> RoomOwnerClientId = new NetworkVariable<ulong>(NoRoomOwner);
+
     /// <summary>PVP 团队击杀比分及胜者，不参与 PVE。</summary>
     public NetworkVariable<int> RedKills = new NetworkVariable<int>(0);
     public NetworkVariable<int> BlueKills = new NetworkVariable<int>(0);
@@ -91,6 +98,7 @@ public class LobbyState : NetworkBehaviour
     public LobbyGameMode GameMode => (LobbyGameMode)GameModeValue.Value;
     public LobbyTeam WinnerTeam => (LobbyTeam)WinnerTeamValue.Value;
     public bool IsPvpMatchOver => WinnerTeam != LobbyTeam.None;
+    public bool HasRoomOwner => RoomOwnerClientId.Value != NoRoomOwner;
 
     public override void OnNetworkSpawn()
     {
@@ -99,6 +107,7 @@ public class LobbyState : NetworkBehaviour
         IsStarted.OnValueChanged += HandleBoolChanged;
         RoomName.OnValueChanged += HandleStringChanged;
         GameModeValue.OnValueChanged += HandleByteChanged;
+        RoomOwnerClientId.OnValueChanged += HandleUlongChanged;
         RedKills.OnValueChanged += HandleIntChanged;
         BlueKills.OnValueChanged += HandleIntChanged;
         WinnerTeamValue.OnValueChanged += HandleByteChanged;
@@ -116,6 +125,7 @@ public class LobbyState : NetworkBehaviour
         IsStarted.OnValueChanged -= HandleBoolChanged;
         RoomName.OnValueChanged -= HandleStringChanged;
         GameModeValue.OnValueChanged -= HandleByteChanged;
+        RoomOwnerClientId.OnValueChanged -= HandleUlongChanged;
         RedKills.OnValueChanged -= HandleIntChanged;
         BlueKills.OnValueChanged -= HandleIntChanged;
         WinnerTeamValue.OnValueChanged -= HandleByteChanged;
@@ -126,6 +136,7 @@ public class LobbyState : NetworkBehaviour
     private void HandleBoolChanged(bool previousValue, bool newValue) => OnChanged?.Invoke();
     private void HandleStringChanged(FixedString64Bytes previousValue, FixedString64Bytes newValue) => OnChanged?.Invoke();
     private void HandleByteChanged(byte previousValue, byte newValue) => OnChanged?.Invoke();
+    private void HandleUlongChanged(ulong previousValue, ulong newValue) => OnChanged?.Invoke();
     private void HandleIntChanged(int previousValue, int newValue) => OnChanged?.Invoke();
 
     // ---- 服务器端操作 ----
@@ -135,9 +146,10 @@ public class LobbyState : NetworkBehaviour
         if (!IsServer)
             return;
 
-        RoomName.Value = new FixedString64Bytes(roomName);
+        RoomName.Value = new FixedString64Bytes(SanitizeFixedStringText(roomName, "PVP公开房间"));
         GameModeValue.Value = (byte)gameMode;
         IsStarted.Value = false;
+        RoomOwnerClientId.Value = NoRoomOwner;
         if (gameMode == LobbyGameMode.PVP)
         {
             RedKills.Value = 0;
@@ -150,7 +162,7 @@ public class LobbyState : NetworkBehaviour
     public void SetRoomName(string roomName)
     {
         if (IsServer)
-            RoomName.Value = new FixedString64Bytes(roomName);
+            RoomName.Value = new FixedString64Bytes(SanitizeFixedStringText(roomName, "我的房间"));
     }
 
     /// <summary>PVE 原有添加成员接口。</summary>
@@ -158,7 +170,7 @@ public class LobbyState : NetworkBehaviour
     {
         if (!IsServer)
             return;
-        PlayerNames.Add(new FixedString64Bytes(playerName));
+        PlayerNames.Add(new FixedString64Bytes(SanitizePlayerName(playerName)));
     }
 
     /// <summary>PVE 原有移除成员接口。</summary>
@@ -166,7 +178,7 @@ public class LobbyState : NetworkBehaviour
     {
         if (!IsServer)
             return;
-        PlayerNames.Remove(new FixedString64Bytes(playerName));
+        PlayerNames.Remove(new FixedString64Bytes(SanitizePlayerName(playerName)));
     }
 
     /// <summary>PVP 专用添加成员接口。</summary>
@@ -193,6 +205,17 @@ public class LobbyState : NetworkBehaviour
     {
         if (IsServer)
             IsStarted.Value = started;
+    }
+
+    public void SetRoomOwner(ulong clientId)
+    {
+        if (IsServer && GameMode == LobbyGameMode.PVP)
+            RoomOwnerClientId.Value = clientId;
+    }
+
+    public bool IsRoomOwner(ulong clientId)
+    {
+        return HasRoomOwner && RoomOwnerClientId.Value == clientId;
     }
 
     /// <summary>任意客户端请求给自己换队；服务器验证身份、状态和 5 人容量。</summary>
@@ -238,6 +261,20 @@ public class LobbyState : NetworkBehaviour
 
         player.CharacterIndex = characterIndex;
         PvpPlayers[playerIndex] = player;
+    }
+
+    /// <summary>Dedicated PVP 的房间管理员请求开局；最终条件仍由服务器再次验证。</summary>
+    [ServerRpc(RequireOwnership = false)]
+    public void RequestStartPvpGameServerRpc(ServerRpcParams rpcParams = default)
+    {
+        if (GameMode != LobbyGameMode.PVP || IsStarted.Value ||
+            !IsRoomOwner(rpcParams.Receive.SenderClientId))
+        {
+            return;
+        }
+
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.HandleDedicatedStartGameRequest(rpcParams.Receive.SenderClientId);
     }
 
     /// <summary>服务器登记一次有效击杀，先到 40 杀的队伍获胜。</summary>
@@ -339,7 +376,17 @@ public class LobbyState : NetworkBehaviour
 
     private static string SanitizePlayerName(string playerName)
     {
-        string value = string.IsNullOrWhiteSpace(playerName) ? "玩家" : playerName.Trim();
-        return value.Length <= 24 ? value : value.Substring(0, 24);
+        return SanitizeFixedStringText(playerName, "玩家");
+    }
+
+    private static string SanitizeFixedStringText(string value, string fallback)
+    {
+        string result = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        const int maxUtf8Bytes = 60;
+        while (result.Length > 0 && Encoding.UTF8.GetByteCount(result) > maxUtf8Bytes)
+            result = result.Substring(0, result.Length - 1);
+        if (result.Length > 0 && char.IsHighSurrogate(result[result.Length - 1]))
+            result = result.Substring(0, result.Length - 1);
+        return string.IsNullOrEmpty(result) ? fallback : result;
     }
 }

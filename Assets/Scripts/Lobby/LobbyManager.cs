@@ -7,7 +7,8 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// 局域网大厅总控：建房、加入、连接审批、模式隔离、PVP 分队、切场景与玩家生成。
+/// 联机大厅总控：PVE 保留 LAN Host；PVP 使用固定端口池中的一房间一进程 Dedicated Server，
+/// 并负责审批、分队、切场景与玩家生成。
 /// LobbyState 保存并同步服务器权威的房间数据。
 /// </summary>
 public class LobbyManager : MonoBehaviour
@@ -26,6 +27,17 @@ public class LobbyManager : MonoBehaviour
 
     [Tooltip("PVP 最大玩家数；红蓝两队各 5 人")]
     public int pvpMaxPlayers = 10;
+
+    [Header("PVP Dedicated Server")]
+    [Tooltip("客户端连接的专用服务器地址。本机测试使用 127.0.0.1，发布前改为云服务器公网 IP。")]
+    public string dedicatedServerAddress = "127.0.0.1";
+
+    [Tooltip("PVP 专用服务器起始 UDP 端口。每个服务器进程占用一个连续端口。")]
+    public int dedicatedServerPort = 7777;
+
+    [Tooltip("同时开放的 PVP 房间槽位数量；需要启动相同数量、不同端口的服务器进程。")]
+    [Range(1, 20)]
+    public int dedicatedServerRoomCount = 5;
 
     [Header("广播")]
     public LanDiscovery discovery;
@@ -87,6 +99,34 @@ public class LobbyManager : MonoBehaviour
     public LobbyGameMode BrowsingGameMode { get; private set; } = LobbyGameMode.PVE;
     public bool IsHost => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
     public bool IsInLobby => m_IsInLobby;
+    public bool IsDedicatedPvpServer => m_IsDedicatedPvpServer;
+    public bool IsDedicatedPvpSession => m_IsDedicatedPvpSession;
+    public bool CanManageRoom
+    {
+        get
+        {
+            NetworkManager networkManager = NetworkManager.Singleton;
+            if (networkManager == null || CurrentLobby == null)
+                return false;
+            if (CurrentLobby.GameMode == LobbyGameMode.PVP && m_IsDedicatedPvpSession)
+            {
+                return networkManager.IsClient &&
+                       CurrentLobby.IsRoomOwner(networkManager.LocalClientId);
+            }
+            return networkManager.IsHost;
+        }
+    }
+
+    public string DedicatedPvpEndpoint
+    {
+        get
+        {
+            int startPort = GetDedicatedServerPort();
+            int endPort = startPort + GetDedicatedServerRoomCount() - 1;
+            return NormalizeDedicatedServerAddress() + ":" + startPort + "-" + endPort;
+        }
+    }
+    public int DedicatedPvpRoomCount => GetDedicatedServerRoomCount();
 
     public event Action OnLobbyChanged;
 
@@ -95,10 +135,23 @@ public class LobbyManager : MonoBehaviour
     {
         public string playerName;
         public byte gameMode;
+        public byte operation;
+        public string roomName;
+    }
+
+    private enum ConnectionOperation : byte
+    {
+        LanJoin = 0,
+        CreateDedicatedPvp = 1,
+        JoinDedicatedPvp = 2,
     }
 
     private bool m_IsInLobby;
+    private bool m_IsDedicatedPvpServer;
+    private bool m_IsDedicatedPvpSession;
+    private bool m_IsDedicatedRoomResetting;
     private bool m_NetworkCallbacksRegistered;
+    private ulong m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
     private string m_PendingRoomName;
     private LobbyGameMode m_PendingRoomMode = LobbyGameMode.PVE;
     private LobbyGameMode m_ActiveGameMode = LobbyGameMode.PVE;
@@ -136,6 +189,7 @@ public class LobbyManager : MonoBehaviour
         if (NetworkManager.Singleton != null)
         {
             NetworkManager.Singleton.OnServerStarted -= OnHostServerStarted;
+            NetworkManager.Singleton.OnServerStarted -= OnDedicatedServerStarted;
             if (NetworkManager.Singleton.SceneManager != null)
                 NetworkManager.Singleton.SceneManager.OnLoadEventCompleted -= OnLoadEventCompleted;
         }
@@ -163,16 +217,22 @@ public class LobbyManager : MonoBehaviour
 
     public void CreateRoom(string roomName, LobbyGameMode gameMode)
     {
+        if (gameMode == LobbyGameMode.PVP)
+        {
+            if (!TryCreateDedicatedPvpRoom(roomName, out string message))
+                Debug.LogWarning("[Dedicated PVP] " + message);
+            return;
+        }
+
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager == null || networkManager.IsListening)
             return;
 
         EnsureNetworkCallbacks();
         ResetSessionCollections();
-        BrowsingGameMode = gameMode;
-        m_PendingRoomMode = gameMode;
-        m_ActiveGameMode = gameMode;
-        m_PendingRoomName = string.IsNullOrWhiteSpace(roomName) ? "我的房间" : roomName.Trim();
+        ConfigurePendingRoom(roomName, gameMode);
+        m_IsDedicatedPvpServer = false;
+        m_IsDedicatedPvpSession = false;
 
         int port = GetGamePort();
         if (transport != null)
@@ -193,45 +253,86 @@ public class LobbyManager : MonoBehaviour
         m_IsInLobby = true;
     }
 
+    /// <summary>由 DedicatedServerBootstrap 调用；服务器启动后保持空闲，直到首位玩家请求创建 PVP 房间。</summary>
+    public bool StartDedicatedPvpServer(int portOverride = 0)
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null || networkManager.IsListening)
+            return false;
+        if (transport == null)
+            transport = networkManager.GetComponent<UnityTransport>();
+        if (transport == null)
+        {
+            Debug.LogError("[Dedicated PVP] 未找到 UnityTransport");
+            return false;
+        }
+
+        int requestedPort = portOverride > 0 ? portOverride : dedicatedServerPort;
+        int maximumGamePort = ushort.MaxValue - LanDiscovery.DedicatedDiscoveryPortOffset;
+        ushort port = (ushort)Mathf.Clamp(requestedPort, 1, maximumGamePort);
+
+        EnsureNetworkCallbacks();
+        ResetSessionCollections();
+        m_IsDedicatedPvpServer = true;
+        m_IsDedicatedPvpSession = true;
+        m_IsInLobby = false;
+        m_IsDedicatedRoomResetting = false;
+        m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
+        BrowsingGameMode = LobbyGameMode.PVP;
+        m_PendingRoomMode = LobbyGameMode.PVP;
+        m_ActiveGameMode = LobbyGameMode.PVP;
+
+        if (discovery != null)
+        {
+            discovery.StopBroadcast();
+            discovery.StopListening();
+            discovery.StopDedicatedPvpDiscovery();
+        }
+
+        transport.SetConnectionData("127.0.0.1", port, "0.0.0.0");
+        ConfigureNetworkForLobby(networkManager);
+        networkManager.OnServerStarted -= OnDedicatedServerStarted;
+        networkManager.OnServerStarted += OnDedicatedServerStarted;
+
+        if (!networkManager.StartServer())
+        {
+            networkManager.OnServerStarted -= OnDedicatedServerStarted;
+            m_IsDedicatedPvpServer = false;
+            m_IsDedicatedPvpSession = false;
+            Debug.LogError("[Dedicated PVP] StartServer 返回 false");
+            return false;
+        }
+
+        Application.runInBackground = true;
+        return true;
+    }
+
+    private void OnDedicatedServerStarted()
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        networkManager.OnServerStarted -= OnDedicatedServerStarted;
+        SubscribeSceneLoadCompleted(networkManager);
+        if (discovery != null)
+        {
+            discovery.StartDedicatedPvpResponder(GetGamePort(), GetMaxPlayers(LobbyGameMode.PVP));
+            RefreshDedicatedPvpServerStatus();
+        }
+        Debug.Log("[Dedicated PVP] 服务器已启动，监听 0.0.0.0:" + GetGamePort() + "，等待玩家创建房间");
+    }
+
     private void OnHostServerStarted()
     {
         NetworkManager networkManager = NetworkManager.Singleton;
         networkManager.OnServerStarted -= OnHostServerStarted;
 
-        if (networkManager.SceneManager != null)
-        {
-            networkManager.SceneManager.OnLoadEventCompleted -= OnLoadEventCompleted;
-            networkManager.SceneManager.OnLoadEventCompleted += OnLoadEventCompleted;
-        }
+        SubscribeSceneLoadCompleted(networkManager);
 
-        if (lobbyStatePrefab == null)
-        {
-            Debug.LogError("[Lobby] 未配置 LobbyState 预制体");
+        LobbyState lobby = SpawnLobbyState();
+        if (lobby == null)
             return;
-        }
-
-        GameObject go = Instantiate(lobbyStatePrefab);
-        LobbyState lobby = go.GetComponent<LobbyState>();
-        NetworkObject networkObject = go.GetComponent<NetworkObject>();
-        if (lobby == null || networkObject == null)
-        {
-            Debug.LogError("[Lobby] LobbyState 预制体必须同时包含 LobbyState 与 NetworkObject");
-            Destroy(go);
-            return;
-        }
-
-        networkObject.Spawn();
-        if (m_PendingRoomMode == LobbyGameMode.PVP)
-        {
-            lobby.Initialize(m_PendingRoomName, LobbyGameMode.PVP);
-            lobby.AddPvpPlayer(NetworkManager.ServerClientId, PlayerName);
-        }
-        else
-        {
-            // PVE 保持原有 LobbyState 数据和建房流程。
-            lobby.SetRoomName(m_PendingRoomName);
-            lobby.AddPlayer(PlayerName);
-        }
+        // PVE 保持原有 LobbyState 数据和建房流程；PVP 不会进入 Host 分支。
+        lobby.SetRoomName(m_PendingRoomName);
+        lobby.AddPlayer(PlayerName);
 
         m_JoinOrder.Add(NetworkManager.ServerClientId);
         m_ClientNames[NetworkManager.ServerClientId] = PlayerName;
@@ -241,6 +342,57 @@ public class LobbyManager : MonoBehaviour
             discovery.StartBroadcast(m_PendingRoomName, 1, capacity, false, GetGamePort(), m_PendingRoomMode);
 
         OnLobbyChanged?.Invoke();
+    }
+
+    private void SubscribeSceneLoadCompleted(NetworkManager networkManager)
+    {
+        if (networkManager != null && networkManager.SceneManager != null)
+        {
+            networkManager.SceneManager.OnLoadEventCompleted -= OnLoadEventCompleted;
+            networkManager.SceneManager.OnLoadEventCompleted += OnLoadEventCompleted;
+        }
+    }
+
+    private LobbyState SpawnLobbyState()
+    {
+        if (lobbyStatePrefab == null)
+        {
+            Debug.LogError("[Lobby] 未配置 LobbyState 预制体");
+            return null;
+        }
+
+        GameObject go = Instantiate(lobbyStatePrefab);
+        LobbyState lobby = go.GetComponent<LobbyState>();
+        NetworkObject networkObject = go.GetComponent<NetworkObject>();
+        if (lobby == null || networkObject == null)
+        {
+            Debug.LogError("[Lobby] LobbyState 预制体必须同时包含 LobbyState 与 NetworkObject");
+            Destroy(go);
+            return null;
+        }
+
+        networkObject.Spawn();
+        return lobby;
+    }
+
+    private bool CreateDedicatedPvpLobby(ulong creatorClientId, ConnectionPayload payload)
+    {
+        if (!m_IsDedicatedPvpServer || CurrentLobby != null)
+            return false;
+
+        LobbyState lobby = SpawnLobbyState();
+        if (lobby == null)
+            return false;
+
+        string roomName = string.IsNullOrWhiteSpace(payload.roomName)
+            ? "PVP公开房间"
+            : payload.roomName.Trim();
+        ConfigurePendingRoom(roomName, LobbyGameMode.PVP);
+        lobby.Initialize(roomName, LobbyGameMode.PVP);
+        lobby.SetRoomOwner(creatorClientId);
+        RefreshDedicatedPvpServerStatus();
+        Debug.Log("[Dedicated PVP] 房间已创建：" + roomName + "，owner=" + creatorClientId);
+        return true;
     }
 
     public void JoinRoom(LanDiscovery.RoomEntry room)
@@ -265,15 +417,8 @@ public class LobbyManager : MonoBehaviour
         }
 
         transport.SetConnectionData(room.hostEndPoint.Address.ToString(), (ushort)room.gamePort);
-        var payload = new ConnectionPayload
-        {
-            playerName = PlayerName,
-            gameMode = (byte)room.gameMode,
-        };
-
-        networkManager.NetworkConfig.ConnectionData = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
-        networkManager.NetworkConfig.ConnectionApproval = true;
-        networkManager.NetworkConfig.EnableSceneManagement = true;
+        ConfigureClientPayload(networkManager, room.gameMode);
+        ConfigureNetworkForLobby(networkManager);
 
         if (networkManager.StartClient())
             m_IsInLobby = true;
@@ -281,11 +426,217 @@ public class LobbyManager : MonoBehaviour
             Debug.LogError("[Lobby] 加入房间失败：StartClient 返回 false");
     }
 
+    public bool TryCreateDedicatedPvpRoom(string roomName, out string message)
+    {
+        if (discovery == null || !discovery.TryGetIdleDedicatedPvpServer(out LanDiscovery.RoomEntry server))
+        {
+            message = discovery != null && discovery.DedicatedPvpServerCount > 0
+                ? "所有 PVP 房间槽位都已被占用"
+                : "尚未发现可用的 PVP 服务器，请先刷新房间列表";
+            return false;
+        }
+        return TryCreateDedicatedPvpRoom(roomName, server, out message);
+    }
+
+    public bool TryCreateDedicatedPvpRoom(
+        string roomName,
+        LanDiscovery.RoomEntry server,
+        out string message)
+    {
+        if (!ValidateDedicatedPvpServerEntry(server, true, out message))
+            return false;
+
+        string normalizedRoomName = string.IsNullOrWhiteSpace(roomName) ? "PVP公开房间" : roomName.Trim();
+        if (normalizedRoomName.Length > 32)
+            normalizedRoomName = normalizedRoomName.Substring(0, 32);
+        return TryConnectDedicatedPvp(
+            ConnectionOperation.CreateDedicatedPvp,
+            normalizedRoomName,
+            server.hostEndPoint.Address.ToString(),
+            server.gamePort,
+            out message);
+    }
+
+    public bool TryJoinDedicatedPvpRoom(out string message)
+    {
+        if (discovery != null)
+            discovery.RefreshRoomList();
+        if (discovery != null)
+        {
+            foreach (LanDiscovery.RoomEntry room in discovery.Rooms)
+            {
+                if (room.isDedicatedPvp && room.hasRoom && !room.isStarted &&
+                    room.currentPlayers < room.maxPlayers)
+                {
+                    return TryJoinDedicatedPvpRoom(room, out message);
+                }
+            }
+        }
+
+        message = "请先从房间列表选择一个可加入的 PVP 房间";
+        return false;
+    }
+
+    public bool TryJoinDedicatedPvpRoom(LanDiscovery.RoomEntry room, out string message)
+    {
+        if (!ValidateDedicatedPvpServerEntry(room, false, out message))
+            return false;
+        return TryConnectDedicatedPvp(
+            ConnectionOperation.JoinDedicatedPvp,
+            string.Empty,
+            room.hostEndPoint.Address.ToString(),
+            room.gamePort,
+            out message);
+    }
+
+    public bool StartDedicatedPvpRoomDiscovery(out string message)
+    {
+        message = string.Empty;
+        if (discovery == null)
+        {
+            message = "未找到房间发现组件";
+            return false;
+        }
+
+        string address = NormalizeDedicatedServerAddress();
+        if (string.IsNullOrEmpty(address))
+        {
+            message = "尚未配置 PVP 专用服务器地址";
+            return false;
+        }
+
+        if (!discovery.StartDedicatedPvpDiscovery(
+                address,
+                GetDedicatedServerPort(),
+                GetDedicatedServerRoomCount()))
+        {
+            message = "无法启动 PVP 房间查询";
+            return false;
+        }
+
+        message = "正在查询 PVP 服务器 ";
+        return true;
+    }
+
+    public void RefreshDedicatedPvpRoomDiscovery()
+    {
+        if (discovery != null)
+            discovery.RefreshDedicatedPvpDiscovery();
+    }
+
+    public void StopDedicatedPvpRoomDiscovery()
+    {
+        if (discovery != null)
+            discovery.StopDedicatedPvpDiscovery();
+    }
+
+    private bool TryConnectDedicatedPvp(
+        ConnectionOperation operation,
+        string roomName,
+        string serverAddress,
+        int serverPort,
+        out string message)
+    {
+        message = string.Empty;
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null)
+        {
+            message = "NetworkManager 尚未就绪";
+            return false;
+        }
+        if (networkManager.IsListening)
+        {
+            message = "当前已经在一个联机房间中";
+            return false;
+        }
+        if (transport == null)
+        {
+            message = "未找到 UnityTransport";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(serverAddress))
+        {
+            message = "尚未配置 PVP 专用服务器地址";
+            return false;
+        }
+        ushort port = (ushort)Mathf.Clamp(serverPort, 1, ushort.MaxValue);
+
+        EnsureNetworkCallbacks();
+        ResetSessionCollections();
+        BrowsingGameMode = LobbyGameMode.PVP;
+        m_ActiveGameMode = LobbyGameMode.PVP;
+        m_IsDedicatedPvpServer = false;
+        m_IsDedicatedPvpSession = true;
+
+        transport.SetConnectionData(serverAddress.Trim(), port);
+        ConfigureClientPayload(networkManager, LobbyGameMode.PVP, operation, roomName);
+        ConfigureNetworkForLobby(networkManager);
+
+        if (!networkManager.StartClient())
+        {
+            m_IsDedicatedPvpSession = false;
+            message = "连接专用服务器失败：StartClient 返回 false";
+            return false;
+        }
+
+        m_IsInLobby = true;
+        StopDedicatedPvpRoomDiscovery();
+        message = operation == ConnectionOperation.CreateDedicatedPvp
+            ? "正在连接端口 " + port + " 并创建 PVP 房间..."
+            : "正在连接 PVP 房间（端口 " + port + "）...";
+        return true;
+    }
+
+    private static bool ValidateDedicatedPvpServerEntry(
+        LanDiscovery.RoomEntry room,
+        bool forCreate,
+        out string message)
+    {
+        message = string.Empty;
+        if (room == null || room.hostEndPoint == null || !room.isDedicatedPvp ||
+            room.gameMode != LobbyGameMode.PVP)
+        {
+            message = "PVP 服务器信息无效，请刷新房间列表";
+            return false;
+        }
+        if (forCreate)
+        {
+            if (!room.canCreate)
+            {
+                message = "这个服务器槽位已被占用，请刷新后重试";
+                return false;
+            }
+            return true;
+        }
+        if (!room.hasRoom)
+        {
+            message = "该服务器槽位还没有创建房间";
+            return false;
+        }
+        if (room.isStarted)
+        {
+            message = "该房间已经开始游戏";
+            return false;
+        }
+        if (room.currentPlayers >= room.maxPlayers)
+        {
+            message = "该房间已满";
+            return false;
+        }
+        return true;
+    }
+
     public void LeaveRoom()
     {
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager == null || !networkManager.IsListening)
             return;
+        if (m_IsDedicatedPvpServer)
+        {
+            Debug.LogWarning("[Dedicated PVP] 服务器进程不能通过玩家离开流程关闭");
+            return;
+        }
 
         if (discovery != null)
             discovery.StopBroadcast();
@@ -297,6 +648,7 @@ public class LobbyManager : MonoBehaviour
             CurrentLobby.OnChanged -= HandleCurrentLobbyChanged;
         CurrentLobby = null;
         ResetSessionCollections();
+        m_IsDedicatedPvpSession = false;
         OnLobbyChanged?.Invoke();
     }
 
@@ -331,9 +683,45 @@ public class LobbyManager : MonoBehaviour
     public bool TryStartGame(out string message)
     {
         message = string.Empty;
-        if (!IsHost || CurrentLobby == null)
+        if (CurrentLobby == null || !CanManageRoom)
         {
             message = "只有房主可以开始游戏";
+            return false;
+        }
+
+        if (!ValidateStartConditions(out message))
+            return false;
+
+        if (m_IsDedicatedPvpSession && !IsHost)
+        {
+            CurrentLobby.RequestStartPvpGameServerRpc();
+            message = "正在请求服务器开始游戏...";
+            return true;
+        }
+
+        return TryStartGameOnServer(out message);
+    }
+
+    /// <summary>LobbyState 仅在服务器验证 RPC 发送者是当前房主后调用。</summary>
+    public void HandleDedicatedStartGameRequest(ulong requesterClientId)
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (!m_IsDedicatedPvpServer || networkManager == null || !networkManager.IsServer ||
+            CurrentLobby == null || !CurrentLobby.IsRoomOwner(requesterClientId))
+        {
+            return;
+        }
+
+        if (!TryStartGameOnServer(out string message))
+            Debug.LogWarning("[Dedicated PVP] 开局请求被拒绝：" + message);
+    }
+
+    private bool ValidateStartConditions(out string message)
+    {
+        message = string.Empty;
+        if (CurrentLobby == null)
+        {
+            message = "房间尚未就绪";
             return false;
         }
         if (CurrentLobby.IsStarted.Value)
@@ -366,13 +754,28 @@ public class LobbyManager : MonoBehaviour
             }
         }
 
+        return true;
+    }
+
+    private bool TryStartGameOnServer(out string message)
+    {
+        message = string.Empty;
         NetworkManager networkManager = NetworkManager.Singleton;
-        if (networkManager == null || networkManager.SceneManager == null)
+        if (networkManager == null || !networkManager.IsServer)
+        {
+            message = "只有服务器可以执行场景切换";
+            return false;
+        }
+        if (!ValidateStartConditions(out message))
+            return false;
+
+        if (networkManager.SceneManager == null)
         {
             message = "网络场景管理器未就绪";
             return false;
         }
 
+        LobbyGameMode gameMode = CurrentLobby.GameMode;
         m_ActiveGameMode = gameMode;
         string sceneName = GetGameSceneName(gameMode);
 
@@ -389,7 +792,7 @@ public class LobbyManager : MonoBehaviour
 
         if (gameMode == LobbyGameMode.PVP)
             CurrentLobby.SetStarted(true);
-        if (discovery != null)
+        if (IsHost && discovery != null)
             discovery.UpdateBroadcastInfo(CurrentLobby.PlayerCount, true);
 
         message = "正在进入 " + sceneName + "...";
@@ -409,6 +812,12 @@ public class LobbyManager : MonoBehaviour
         }
 
         ConnectionPayload payload = DecodeConnectionPayload(request.Payload);
+        if (m_IsDedicatedPvpServer)
+        {
+            ApprovalCheckDedicatedPvp(request.ClientNetworkId, payload, response);
+            return;
+        }
+
         LobbyGameMode requestedMode = (LobbyGameMode)payload.gameMode;
         LobbyGameMode roomMode = CurrentLobby != null ? CurrentLobby.GameMode : m_PendingRoomMode;
         int currentPlayers = NetworkManager.Singleton.ConnectedClientsIds.Count;
@@ -437,11 +846,99 @@ public class LobbyManager : MonoBehaviour
         m_PendingConnections[request.ClientNetworkId] = payload;
     }
 
+    private void ApprovalCheckDedicatedPvp(
+        ulong clientId,
+        ConnectionPayload payload,
+        NetworkManager.ConnectionApprovalResponse response)
+    {
+        LobbyGameMode requestedMode = (LobbyGameMode)payload.gameMode;
+        ConnectionOperation operation = (ConnectionOperation)payload.operation;
+        if (requestedMode != LobbyGameMode.PVP)
+        {
+            RejectConnection(response, "该服务器仅提供 PVP 房间");
+            return;
+        }
+
+        if (operation == ConnectionOperation.CreateDedicatedPvp)
+        {
+            if (m_IsDedicatedRoomResetting)
+            {
+                RejectConnection(response, "服务器正在重置上一局，请稍后重试");
+                return;
+            }
+            if (CurrentLobby != null || m_PendingDedicatedCreatorClientId != LobbyState.NoRoomOwner)
+            {
+                RejectConnection(response, "公开 PVP 房间已经存在，请点击加入房间");
+                return;
+            }
+
+            m_PendingDedicatedCreatorClientId = clientId;
+            RefreshDedicatedPvpServerStatus();
+        }
+        else if (operation == ConnectionOperation.JoinDedicatedPvp)
+        {
+            if (CurrentLobby == null)
+            {
+                RejectConnection(response, "当前还没有 PVP 房间，请先创建房间");
+                return;
+            }
+            if (CurrentLobby.IsStarted.Value)
+            {
+                RejectConnection(response, "对局进行中");
+                return;
+            }
+            if (CurrentLobby.PlayerCount >= GetMaxPlayers(LobbyGameMode.PVP))
+            {
+                RejectConnection(response, "房间已满");
+                return;
+            }
+        }
+        else
+        {
+            RejectConnection(response, "无效的 PVP 房间操作");
+            return;
+        }
+
+        response.Approved = true;
+        response.CreatePlayerObject = false;
+        m_PendingConnections[clientId] = payload;
+    }
+
+    private static void RejectConnection(
+        NetworkManager.ConnectionApprovalResponse response,
+        string reason)
+    {
+        response.Approved = false;
+        response.CreatePlayerObject = false;
+        response.Reason = reason;
+    }
+
     private void OnClientConnected(ulong clientId)
     {
-        if (IsHost && CurrentLobby != null && m_PendingConnections.TryGetValue(clientId, out ConnectionPayload payload))
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager != null && networkManager.IsServer &&
+            m_PendingConnections.TryGetValue(clientId, out ConnectionPayload payload))
         {
             m_PendingConnections.Remove(clientId);
+            ConnectionOperation operation = (ConnectionOperation)payload.operation;
+            if (m_IsDedicatedPvpServer && operation == ConnectionOperation.CreateDedicatedPvp)
+            {
+                if (!CreateDedicatedPvpLobby(clientId, payload))
+                {
+                    m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
+                    RefreshDedicatedPvpServerStatus();
+                    networkManager.DisconnectClient(clientId, "创建 PVP 房间失败");
+                    return;
+                }
+                m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
+            }
+
+            if (CurrentLobby == null)
+            {
+                networkManager.DisconnectClient(clientId, "房间状态不存在");
+                return;
+            }
+
             string name = string.IsNullOrWhiteSpace(payload.playerName) ? "玩家" : payload.playerName;
             m_ClientNames[clientId] = name;
             if (CurrentLobby.GameMode == LobbyGameMode.PVP)
@@ -452,8 +949,13 @@ public class LobbyManager : MonoBehaviour
             if (!m_JoinOrder.Contains(clientId))
                 m_JoinOrder.Add(clientId);
 
-            if (discovery != null)
+            if (m_IsDedicatedPvpServer && !CurrentLobby.HasRoomOwner)
+                CurrentLobby.SetRoomOwner(clientId);
+
+            if (IsHost && discovery != null)
                 discovery.UpdateBroadcastInfo(CurrentLobby.PlayerCount, CurrentLobby.IsStarted.Value);
+            if (m_IsDedicatedPvpServer)
+                RefreshDedicatedPvpServerStatus();
         }
 
         OnLobbyChanged?.Invoke();
@@ -461,26 +963,58 @@ public class LobbyManager : MonoBehaviour
 
     private void OnClientDisconnected(ulong clientId)
     {
-        if (IsHost && CurrentLobby != null && CurrentLobby.IsSpawned)
+        NetworkManager networkManager = NetworkManager.Singleton;
+        bool isServer = networkManager != null && networkManager.IsServer;
+        bool wasPendingCreator = clientId == m_PendingDedicatedCreatorClientId;
+        m_PendingConnections.Remove(clientId);
+        if (wasPendingCreator)
+            m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
+
+        if (isServer && CurrentLobby != null && CurrentLobby.IsSpawned)
         {
+            bool wasRoomOwner = CurrentLobby.IsRoomOwner(clientId);
             m_ClientNames.TryGetValue(clientId, out string disconnectedName);
             m_ClientNames.Remove(clientId);
-            m_PendingConnections.Remove(clientId);
             m_JoinOrder.Remove(clientId);
             if (CurrentLobby.GameMode == LobbyGameMode.PVP)
                 CurrentLobby.RemovePvpPlayer(clientId);
             else if (!string.IsNullOrEmpty(disconnectedName))
                 CurrentLobby.RemovePlayer(disconnectedName);
 
-            if (discovery != null)
+            if (m_IsDedicatedPvpServer && CurrentLobby.GameMode == LobbyGameMode.PVP)
+            {
+                if (CurrentLobby.PlayerCount == 0 && m_PendingConnections.Count == 0)
+                {
+                    ResetDedicatedPvpRoom();
+                }
+                else if (wasRoomOwner && m_JoinOrder.Count > 0)
+                {
+                    CurrentLobby.SetRoomOwner(m_JoinOrder[0]);
+                    Debug.Log("[Dedicated PVP] 房主已退出，权限转移给 client=" + m_JoinOrder[0]);
+                }
+                else if (wasRoomOwner)
+                {
+                    // 已审批但尚未完成连接的玩家到达后，会自动接管这个暂时无主的房间。
+                    CurrentLobby.SetRoomOwner(LobbyState.NoRoomOwner);
+                }
+            }
+            else if (IsHost && discovery != null)
+            {
                 discovery.UpdateBroadcastInfo(CurrentLobby.PlayerCount, CurrentLobby.IsStarted.Value);
+            }
         }
 
-        if (!IsHost && clientId == NetworkManager.ServerClientId)
+        if (!isServer && clientId == NetworkManager.ServerClientId)
         {
             m_IsInLobby = false;
+            m_IsDedicatedPvpSession = false;
+            if (CurrentLobby != null)
+                CurrentLobby.OnChanged -= HandleCurrentLobbyChanged;
             CurrentLobby = null;
         }
+
+        if (isServer && m_IsDedicatedPvpServer)
+            RefreshDedicatedPvpServerStatus();
 
         OnLobbyChanged?.Invoke();
     }
@@ -518,6 +1052,51 @@ public class LobbyManager : MonoBehaviour
         m_NetworkCallbacksRegistered = false;
     }
 
+    private void ResetDedicatedPvpRoom()
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (!m_IsDedicatedPvpServer || networkManager == null || !networkManager.IsServer)
+            return;
+
+        LobbyState lobby = CurrentLobby;
+        if (lobby != null)
+        {
+            lobby.OnChanged -= HandleCurrentLobbyChanged;
+            CurrentLobby = null;
+            NetworkObject networkObject = lobby.NetworkObject;
+            if (networkObject != null && networkObject.IsSpawned)
+                networkObject.Despawn(true);
+            else
+                Destroy(lobby.gameObject);
+        }
+
+        ResetSessionCollections();
+        m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
+        m_IsInLobby = false;
+        m_PendingRoomName = string.Empty;
+        m_PendingRoomMode = LobbyGameMode.PVP;
+        m_ActiveGameMode = LobbyGameMode.PVP;
+
+        if (SceneManager.GetActiveScene().name == "GamePVP" && networkManager.SceneManager != null)
+        {
+            m_IsDedicatedRoomResetting = true;
+            SceneEventProgressStatus status = networkManager.SceneManager.LoadScene("GameStart", LoadSceneMode.Single);
+            if (status != SceneEventProgressStatus.Started)
+            {
+                m_IsDedicatedRoomResetting = false;
+                Debug.LogError("[Dedicated PVP] 返回 GameStart 失败：" + status);
+            }
+        }
+        else
+        {
+            m_IsDedicatedRoomResetting = false;
+        }
+
+        RefreshDedicatedPvpServerStatus();
+        Debug.Log("[Dedicated PVP] 房间已清空，服务器恢复为空闲状态");
+        OnLobbyChanged?.Invoke();
+    }
+
     // ---- 场景切换完成后生成玩家 ----
 
     private void OnLoadEventCompleted(
@@ -526,8 +1105,17 @@ public class LobbyManager : MonoBehaviour
         List<ulong> clientsCompleted,
         List<ulong> clientsTimedOut)
     {
-        if (!IsHost)
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null || !networkManager.IsServer)
             return;
+
+        if (m_IsDedicatedPvpServer && sceneName == "GameStart")
+        {
+            m_IsDedicatedRoomResetting = false;
+            RefreshDedicatedPvpServerStatus();
+            Debug.Log("[Dedicated PVP] GameStart 已重新载入，可以创建下一间房");
+            return;
+        }
 
         // PVE 仍按加入顺序生成，不把 PVP 基地规则带进去。
         if (m_ActiveGameMode == LobbyGameMode.PVE)
@@ -728,6 +1316,7 @@ public class LobbyManager : MonoBehaviour
         CurrentLobby = lobby;
         m_ActiveGameMode = lobby.GameMode;
         lobby.OnChanged += HandleCurrentLobbyChanged;
+        RefreshDedicatedPvpServerStatus();
         OnLobbyChanged?.Invoke();
     }
 
@@ -735,11 +1324,14 @@ public class LobbyManager : MonoBehaviour
     {
         if (IsHost && discovery != null && CurrentLobby != null)
             discovery.UpdateBroadcastInfo(CurrentLobby.PlayerCount, CurrentLobby.IsStarted.Value);
+        RefreshDedicatedPvpServerStatus();
         OnLobbyChanged?.Invoke();
     }
 
     private void OnLocalSceneLoaded(Scene scene, LoadSceneMode loadSceneMode)
     {
+        if (m_IsDedicatedPvpServer)
+            return;
         if (scene.name != "GamePVP" || CurrentLobby == null || CurrentLobby.GameMode != LobbyGameMode.PVP)
             return;
 
@@ -772,10 +1364,82 @@ public class LobbyManager : MonoBehaviour
         return transport != null ? transport.ConnectionData.Port : 7777;
     }
 
+    private string NormalizeDedicatedServerAddress()
+    {
+        return string.IsNullOrWhiteSpace(dedicatedServerAddress)
+            ? string.Empty
+            : dedicatedServerAddress.Trim();
+    }
+
+    private int GetDedicatedServerPort()
+    {
+        int maximumStartPort = ushort.MaxValue - LanDiscovery.DedicatedDiscoveryPortOffset;
+        return Mathf.Clamp(dedicatedServerPort, 1, maximumStartPort);
+    }
+
+    private int GetDedicatedServerRoomCount()
+    {
+        int maximumCount = ushort.MaxValue -
+                           (GetDedicatedServerPort() + LanDiscovery.DedicatedDiscoveryPortOffset) + 1;
+        return Mathf.Clamp(dedicatedServerRoomCount, 1, Mathf.Max(1, maximumCount));
+    }
+
+    private void RefreshDedicatedPvpServerStatus()
+    {
+        if (!m_IsDedicatedPvpServer || discovery == null)
+            return;
+
+        bool hasRoom = CurrentLobby != null && CurrentLobby.GameMode == LobbyGameMode.PVP;
+        bool canCreate = !hasRoom && !m_IsDedicatedRoomResetting &&
+                         m_PendingDedicatedCreatorClientId == LobbyState.NoRoomOwner;
+        discovery.UpdateDedicatedPvpStatus(
+            hasRoom ? CurrentLobby.GetRoomName() : string.Empty,
+            hasRoom ? CurrentLobby.PlayerCount : 0,
+            GetMaxPlayers(LobbyGameMode.PVP),
+            hasRoom && CurrentLobby.IsStarted.Value,
+            hasRoom,
+            canCreate);
+    }
+
+    private void ConfigurePendingRoom(string roomName, LobbyGameMode gameMode)
+    {
+        BrowsingGameMode = gameMode;
+        m_PendingRoomMode = gameMode;
+        m_ActiveGameMode = gameMode;
+        m_PendingRoomName = string.IsNullOrWhiteSpace(roomName) ? "我的房间" : roomName.Trim();
+    }
+
+    private void ConfigureClientPayload(
+        NetworkManager networkManager,
+        LobbyGameMode gameMode,
+        ConnectionOperation operation = ConnectionOperation.LanJoin,
+        string roomName = "")
+    {
+        var payload = new ConnectionPayload
+        {
+            playerName = PlayerName,
+            gameMode = (byte)gameMode,
+            operation = (byte)operation,
+            roomName = roomName,
+        };
+        networkManager.NetworkConfig.ConnectionData = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
+    }
+
+    private static void ConfigureNetworkForLobby(NetworkManager networkManager)
+    {
+        networkManager.NetworkConfig.ConnectionApproval = true;
+        networkManager.NetworkConfig.EnableSceneManagement = true;
+    }
+
     private static ConnectionPayload DecodeConnectionPayload(byte[] payload)
     {
         if (payload == null || payload.Length == 0)
-            return new ConnectionPayload { playerName = "玩家", gameMode = (byte)LobbyGameMode.PVE };
+            return new ConnectionPayload
+            {
+                playerName = "玩家",
+                gameMode = (byte)LobbyGameMode.PVE,
+                operation = (byte)ConnectionOperation.LanJoin,
+            };
 
         try
         {
@@ -786,7 +1450,12 @@ public class LobbyManager : MonoBehaviour
         }
         catch
         {
-            return new ConnectionPayload { playerName = "玩家", gameMode = (byte)LobbyGameMode.PVE };
+            return new ConnectionPayload
+            {
+                playerName = "玩家",
+                gameMode = (byte)LobbyGameMode.PVE,
+                operation = (byte)ConnectionOperation.LanJoin,
+            };
         }
     }
 

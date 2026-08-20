@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using TMPro;
@@ -22,7 +23,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     public Text txtEmpty;
     public Text txtStatus;
 
-    [Header("选中高亮（可选）")]
+    [Header("选中高亮")]
     public Color selectedLabelColor = new Color(1f, 0.85f, 0.2f, 1f);
     public Color normalLabelColor = Color.white;
 
@@ -71,6 +72,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     private bool m_ButtonsInteractable = true;
     private bool m_EventsBound;
     private LobbyGameMode m_RequestedGameMode = LobbyGameMode.PVE;
+    private Coroutine m_PvpCreateRoutine;
 
     private GameObject m_PvpTeamRoot;
     private Text m_RedHeader;
@@ -122,7 +124,22 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         UpdateModePresentation();
 
         if (Discovery != null)
-            Discovery.StartListening();
+        {
+            if (m_RequestedGameMode == LobbyGameMode.PVE)
+            {
+                Lobby?.StopDedicatedPvpRoomDiscovery();
+                Discovery.StartListening();
+            }
+            else
+            {
+                Discovery.StopListening();
+                if (Lobby != null)
+                {
+                    Lobby.StartDedicatedPvpRoomDiscovery(out string message);
+                    SetStatus(message);
+                }
+            }
+        }
         RefreshRoomListView();
     }
 
@@ -133,6 +150,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void OnDisable()
     {
+        CancelPvpCreateRoutine();
         UnbindEvents();
     }
 
@@ -172,13 +190,38 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
             : defaultName;
 
         ApplyPlayerName();
-        Lobby.CreateRoom(roomName, m_RequestedGameMode);
-        ShowInRoomView();
-        SetStatus("已创建房间，等待玩家加入...");
+        if (m_RequestedGameMode == LobbyGameMode.PVP)
+        {
+            if (m_PvpCreateRoutine == null)
+                m_PvpCreateRoutine = StartCoroutine(CreatePvpRoomWhenServerAvailable(roomName));
+            return;
+        }
+
+        Lobby.CreateRoom(roomName, LobbyGameMode.PVE);
+        if (Lobby.IsInLobby)
+        {
+            ShowInRoomView();
+            SetStatus("已创建 LAN PVE 房间，等待玩家加入...");
+        }
+        else
+        {
+            SetStatus("LAN 房间创建失败，请查看 Console");
+        }
     }
 
     private void OnRefreshClicked()
     {
+        if (m_RequestedGameMode == LobbyGameMode.PVP)
+        {
+            if (Lobby == null)
+                return;
+            Lobby.StartDedicatedPvpRoomDiscovery(out string message);
+            Lobby.RefreshDedicatedPvpRoomDiscovery();
+            RefreshRoomListView();
+            SetStatus(message);
+            return;
+        }
+
         if (Discovery != null)
         {
             Discovery.ClearRooms();
@@ -190,6 +233,28 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void OnJoinClicked()
     {
+        if (Lobby == null)
+            return;
+        if (m_RequestedGameMode == LobbyGameMode.PVP)
+        {
+            if (m_SelectedRoom == null)
+            {
+                SetStatus("请先从列表选择一个 PVP 房间");
+                return;
+            }
+            ApplyPlayerName();
+            if (Lobby.TryJoinDedicatedPvpRoom(m_SelectedRoom, out string message))
+            {
+                ShowInRoomView();
+                SetStatus(message);
+            }
+            else
+            {
+                SetStatus("无法加入 PVP 房间：" + message);
+            }
+            return;
+        }
+
         if (m_SelectedRoom == null)
         {
             SetStatus("请先选择一个房间");
@@ -208,8 +273,15 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
         ApplyPlayerName();
         Lobby.JoinRoom(m_SelectedRoom);
-        ShowInRoomView();
-        SetStatus("正在连接...");
+        if (Lobby.IsInLobby)
+        {
+            ShowInRoomView();
+            SetStatus("正在连接 LAN 房间...");
+        }
+        else
+        {
+            SetStatus("LAN 房间连接启动失败，请查看 Console");
+        }
     }
 
     private void OnStartGameClicked()
@@ -226,6 +298,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void OnLeaveRoomClicked()
     {
+        CancelPvpCreateRoutine();
         if (Lobby != null)
             Lobby.LeaveRoom();
         ShowBrowseView();
@@ -234,10 +307,13 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void OnBackClicked()
     {
+        CancelPvpCreateRoutine();
         if (Lobby != null)
             Lobby.LeaveRoom();
         if (Discovery != null)
             Discovery.StopListening();
+        if (Lobby != null)
+            Lobby.StopDedicatedPvpRoomDiscovery();
 
         Exit(() =>
         {
@@ -254,6 +330,67 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         RefreshSelectionHighlight();
         if (room != null)
             SetStatus("已选中房间：" + room.roomName);
+    }
+
+    private IEnumerator CreatePvpRoomWhenServerAvailable(string roomName)
+    {
+        if (Lobby == null || Discovery == null)
+        {
+            SetStatus("无法创建 PVP 房间：房间发现组件未就绪");
+            m_PvpCreateRoutine = null;
+            yield break;
+        }
+
+        if (btnCreateRoom != null)
+            btnCreateRoom.interactable = false;
+
+        Lobby.StartDedicatedPvpRoomDiscovery(out string discoveryMessage);
+        Lobby.RefreshDedicatedPvpRoomDiscovery();
+        SetStatus(discoveryMessage);
+
+        float deadline = Time.unscaledTime + 1.5f;
+        while (Time.unscaledTime < deadline)
+        {
+            if (Discovery.TryGetIdleDedicatedPvpServer(out LanDiscovery.RoomEntry server))
+            {
+                if (Lobby.TryCreateDedicatedPvpRoom(roomName, server, out string message))
+                {
+                    ShowInRoomView();
+                    SetStatus(message);
+                }
+                else
+                {
+                    SetStatus("无法创建 PVP 房间：" + message);
+                }
+
+                if (btnCreateRoom != null)
+                    btnCreateRoom.interactable = CanInteract;
+                m_PvpCreateRoutine = null;
+                yield break;
+            }
+
+            if (Discovery.DedicatedPvpServerCount >= Lobby.DedicatedPvpRoomCount)
+                break;
+            yield return null;
+        }
+
+        int respondingServers = Discovery.DedicatedPvpServerCount;
+        SetStatus(respondingServers == 0
+            ? "无法创建 PVP 房间：服务器未响应，请确认5个服务器进程和查询端口已启动"
+            : "无法创建 PVP 房间：所有服务器槽位都已被占用");
+        if (btnCreateRoom != null)
+            btnCreateRoom.interactable = CanInteract;
+        m_PvpCreateRoutine = null;
+    }
+
+    private void CancelPvpCreateRoutine()
+    {
+        if (m_PvpCreateRoutine == null)
+            return;
+        StopCoroutine(m_PvpCreateRoutine);
+        m_PvpCreateRoutine = null;
+        if (btnCreateRoom != null)
+            btnCreateRoom.interactable = CanInteract;
     }
 
     private void SelectTeam(LobbyTeam team)
@@ -281,13 +418,15 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void ShowInRoomView()
     {
+        if (Lobby != null && m_RequestedGameMode == LobbyGameMode.PVP)
+            Lobby.StopDedicatedPvpRoomDiscovery();
         if (panelBrowse != null) panelBrowse.SetActive(false);
         if (panelInRoom != null) panelInRoom.SetActive(true);
 
         bool isPvp = IsPvpRoom();
         if (txtMemberList != null) txtMemberList.gameObject.SetActive(!isPvp);
         if (m_PvpTeamRoot != null) m_PvpTeamRoot.SetActive(isPvp);
-        if (btnStartGame != null) btnStartGame.gameObject.SetActive(Lobby != null && Lobby.IsHost);
+        if (btnStartGame != null) btnStartGame.gameObject.SetActive(Lobby != null && Lobby.CanManageRoom);
         RefreshLobbyView();
     }
 
@@ -312,6 +451,9 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         // 复用现有 PVE 面板资源，在进入时替换带 PVE/PVP 的浏览标题。
         if (panelBrowse == null)
             return;
+
+        if (btnRefresh != null)
+            btnRefresh.gameObject.SetActive(true);
 
         string target = m_RequestedGameMode == LobbyGameMode.PVP
             ? "创建PVP联机房间"
@@ -346,24 +488,25 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void RefreshRoomListView()
     {
-        if (Discovery == null || roomListContainer == null || roomEntryPrefab == null)
-            return;
         if (panelBrowse != null && !panelBrowse.activeSelf)
             return;
 
+        if (Discovery == null || roomListContainer == null || roomEntryPrefab == null)
+            return;
+
         Discovery.RefreshRoomList();
-        foreach (RoomEntryView view in m_EntryViews)
-        {
-            if (view.go != null)
-                Destroy(view.go);
-        }
-        m_EntryViews.Clear();
+        ClearRoomEntryViews(false);
 
         int matchingRooms = 0;
         foreach (LanDiscovery.RoomEntry room in Discovery.Rooms)
         {
             if (room.gameMode != m_RequestedGameMode)
                 continue;
+            if (m_RequestedGameMode == LobbyGameMode.PVP &&
+                (!room.isDedicatedPvp || !room.hasRoom))
+            {
+                continue;
+            }
 
             matchingRooms++;
             GameObject go = Instantiate(roomEntryPrefab, roomListContainer);
@@ -397,7 +540,24 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         }
 
         if (txtEmpty != null)
+        {
             txtEmpty.gameObject.SetActive(matchingRooms == 0);
+            if (matchingRooms == 0)
+            {
+                if (m_RequestedGameMode == LobbyGameMode.PVP && Lobby != null)
+                {
+                    int responding = Discovery.DedicatedPvpServerCount;
+                    int idle = Discovery.DedicatedPvpIdleServerCount;
+                    txtEmpty.text = responding == 0
+                        ? "正在查询 PVP 服务器 "
+                        : "（暂无已创建的房间）";
+                }
+                else
+                {
+                    txtEmpty.text = "（未发现房间）";
+                }
+            }
+        }
 
         if (m_SelectedRoom != null)
         {
@@ -418,6 +578,18 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         RefreshSelectionHighlight();
     }
 
+    private void ClearRoomEntryViews(bool clearSelection)
+    {
+        foreach (RoomEntryView view in m_EntryViews)
+        {
+            if (view.go != null)
+                Destroy(view.go);
+        }
+        m_EntryViews.Clear();
+        if (clearSelection)
+            m_SelectedRoom = null;
+    }
+
     private void ClearSelection()
     {
         m_SelectedRoom = null;
@@ -430,10 +602,11 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         if (btnJoin == null)
             return;
         bool canJoin = m_SelectedRoom != null
-            && m_SelectedRoom.gameMode == m_RequestedGameMode
-            && !m_SelectedRoom.isStarted
-            && m_SelectedRoom.currentPlayers < m_SelectedRoom.maxPlayers;
-        btnJoin.interactable = m_ButtonsInteractable && canJoin;
+                       && m_SelectedRoom.gameMode == m_RequestedGameMode
+                       && (!m_SelectedRoom.isDedicatedPvp || m_SelectedRoom.hasRoom)
+                       && !m_SelectedRoom.isStarted
+                       && m_SelectedRoom.currentPlayers < m_SelectedRoom.maxPlayers;
+        btnJoin.interactable = CanInteract && canJoin;
     }
 
     private void RefreshSelectionHighlight()
@@ -451,6 +624,16 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     {
         if (Lobby == null)
             return;
+
+        if (panelInRoom != null && panelInRoom.activeSelf && !Lobby.IsInLobby)
+        {
+            string reason = NetworkManager.Singleton != null
+                ? NetworkManager.Singleton.DisconnectReason
+                : string.Empty;
+            ShowBrowseView();
+            SetStatus(string.IsNullOrWhiteSpace(reason) ? "连接已断开" : "连接已断开：" + reason);
+            return;
+        }
 
         LobbyState state = Lobby.CurrentLobby;
         bool isPvp = state != null ? state.GameMode == LobbyGameMode.PVP : m_RequestedGameMode == LobbyGameMode.PVP;
@@ -476,7 +659,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         }
 
         if (btnStartGame != null)
-            btnStartGame.gameObject.SetActive(Lobby.IsHost);
+            btnStartGame.gameObject.SetActive(Lobby.CanManageRoom);
         RefreshStartButtonState();
     }
 
@@ -544,10 +727,11 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
             {
                 LobbyPlayerData player = players[i];
                 bool isLocal = player.ClientId == localClientId;
-                bool isHost = player.ClientId == NetworkManager.ServerClientId;
+                bool isHost = state.IsRoomOwner(player.ClientId);
+                string roleTag = (isLocal ? "（我）" : string.Empty) +
+                                 (isHost ? "（房主）" : string.Empty);
                 slot.label.text = (i + 1) + ". " + player.PlayerName + " [" +
-                                  GetCharacterDisplayName(player.CharacterIndex) + "]" +
-                                  (isLocal ? "（我）" : isHost ? "（房主）" : string.Empty);
+                                  GetCharacterDisplayName(player.CharacterIndex) + "]" + roleTag;
                 slot.label.color = isLocal ? new Color(0.45f, 1f, 0.55f, 1f) : Color.white;
                 slot.background.color = slot.team == LobbyTeam.Red
                     ? new Color(0.55f, 0.12f, 0.12f, 0.82f)
@@ -562,7 +746,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
                 slot.background.color = slot.team == LobbyTeam.Red
                     ? new Color(0.35f, 0.08f, 0.08f, 0.58f)
                     : new Color(0.06f, 0.14f, 0.34f, 0.58f);
-                slot.button.interactable = m_ButtonsInteractable
+                slot.button.interactable = CanInteract
                     && !state.IsStarted.Value
                     && localTeam != slot.team;
             }
@@ -583,7 +767,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
                 ? new Color(0.18f, 0.65f, 0.32f, 0.92f)
                 : new Color(0.12f, 0.12f, 0.16f, 0.82f);
             view.label.text = GetCharacterDisplayName(view.characterIndex) + (selected ? " ✓" : string.Empty);
-            view.button.interactable = m_ButtonsInteractable && !state.IsStarted.Value && !selected;
+            view.button.interactable = CanInteract && !state.IsStarted.Value && !selected;
         }
     }
 
@@ -592,7 +776,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         if (btnStartGame == null)
             return;
 
-        bool canStart = m_ButtonsInteractable && Lobby != null && Lobby.IsHost && Lobby.CurrentLobby != null;
+        bool canStart = CanInteract && Lobby != null && Lobby.CanManageRoom && Lobby.CurrentLobby != null;
         LobbyState state = Lobby != null ? Lobby.CurrentLobby : null;
         if (canStart && state.GameMode == LobbyGameMode.PVP)
         {
@@ -825,6 +1009,8 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
             txtStatus.text = message;
     }
 
+    private bool CanInteract => m_ButtonsInteractable;
+
     // ---- UIBase ----
 
     protected override void DisableButtons()
@@ -840,10 +1026,10 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     private void SetButtonsInteractable(bool interactable)
     {
         m_ButtonsInteractable = interactable;
-        if (btnCreateRoom != null) btnCreateRoom.interactable = interactable;
-        if (btnRefresh != null) btnRefresh.interactable = interactable;
-        if (btnLeaveRoom != null) btnLeaveRoom.interactable = interactable;
-        if (btnBack != null) btnBack.interactable = interactable;
+        if (btnCreateRoom != null) btnCreateRoom.interactable = CanInteract;
+        if (btnRefresh != null) btnRefresh.interactable = CanInteract;
+        if (btnLeaveRoom != null) btnLeaveRoom.interactable = CanInteract;
+        if (btnBack != null) btnBack.interactable = CanInteract;
         UpdateJoinButtonState();
         RefreshLobbyView();
     }
