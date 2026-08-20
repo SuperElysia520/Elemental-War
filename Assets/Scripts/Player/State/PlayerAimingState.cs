@@ -28,34 +28,39 @@ public class PlayerAimingState : PlayerStateBase
         playerModel.PlayerStateAnimation("Aiming");
         if (IsBeControl())
         {
-            UpdateAimingTarget();
             playerController.EnterAim();
         }
     }
 
     public override void Update()
     {
+        if (!CanUpdate)
+            return;
+
         base.Update();
+
+        if (!CanUpdate)
+            return;
 
         if (IsBeControl())
         {
-            // 让模型立刻旋转至相机方向
-            playerModel.transform.rotation = Quaternion.Euler(0, Camera.main.transform.rotation.eulerAngles.y, 0);
-            UpdateAimingTarget();
+            // 第一人称：身体 yaw 由 PlayerController 直接设到相机朝向，这里不再回读相机旋转
 
-            #region 待机监听
-            if (!playerController.isAiming && !playerController.isFire)
+            #region 跳跃监听
+            if (playerController.isJumping)
             {
-                playerModel.SwitchState(PlayerState.Idle);
+                SwitchToHover();
                 return;
             }
             #endregion
 
-            #region 开火监听
-            if (playerController.isFire)
+            #region 待机监听
+            if (!playerController.isAiming)
             {
-                playerModel.weapon.Fire(playerController.AimTarget.position);
-                playerController.ShakeCamera(); // 开火进行屏幕抖动
+                playerModel.SwitchState(playerController.moveInput.sqrMagnitude > 0.0001f
+                    ? PlayerState.Move
+                    : PlayerState.Idle);
+                return;
             }
             #endregion
 
@@ -78,21 +83,5 @@ public class PlayerAimingState : PlayerStateBase
         base.Exit();
         if (IsBeControl())
             playerController.ExitAim();
-    }
-
-    /// <summary>
-    /// 从屏幕中心发射射线确认瞄准位置
-    /// </summary>
-    private void UpdateAimingTarget()
-    {
-        // 发射射线
-        Ray ray = Camera.main.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0));
-        RaycastHit hit;
-        
-        if (Physics.Raycast(ray, out hit, playerController.maxRayDistance, playerController.aimLayerMask))
-            // 更新瞄准目标位置
-            playerController.AimTarget.position = hit.point;
-        else
-            playerController.AimTarget.position = ray.origin + ray.direction * playerController.maxRayDistance;
     }
 }

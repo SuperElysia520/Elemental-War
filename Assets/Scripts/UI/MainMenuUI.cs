@@ -8,8 +8,8 @@ using UnityEngine.SceneManagement;
 
 public class MainMenuUI : UIBase<MainMenuUI>
 {
-    public Button btnOnline;
-    public Button btnContinue;
+    public Button btnOnlinePVP;
+    public Button btnContinuePVE;
     public Button btnNewGame;
     public Button btnRead;
     public Button btnCharacter;
@@ -24,8 +24,8 @@ public class MainMenuUI : UIBase<MainMenuUI>
     protected override void Awake()
     {
         base.Awake();
-        btnOnline.onClick.AddListener(ShowLobbyMenu);
-        btnContinue.onClick.AddListener(ShowTipMenu);
+        btnOnlinePVP.onClick.AddListener(ShowPVPLobbyMenu);
+        btnContinuePVE.onClick.AddListener(ShowPVELobbyMenu);
         btnNewGame.onClick.AddListener(() =>
         {
             SceneManager.LoadScene("Game");
@@ -63,22 +63,31 @@ public class MainMenuUI : UIBase<MainMenuUI>
         });
     }
 
-    private void ShowLobbyMenu()
+    private void ShowPVELobbyMenu()
     {
         Exit(() => // 主菜单先播放FadeOut
         {
-            LobbyMenuUI.instance.Enter(); // 之后大厅菜单播放FadeIn
+            LobbyMenuUI.instance.Enter(); // 保持原有 PVE 大厅入口
+            btnExit.gameObject.SetActive(false); // 隐藏退出按钮
+        });
+    }
+
+    private void ShowPVPLobbyMenu()
+    {
+        Exit(() => // 主菜单先播放FadeOut
+        {
+            LobbyMenuUI.instance.Enter(LobbyGameMode.PVP); // 进入仅显示 PVP 房间的团队大厅
             btnExit.gameObject.SetActive(false); // 隐藏退出按钮
         });
     }
 
     protected override void DisableButtons()
     {
-        btnOnline.interactable = false;
+        btnOnlinePVP.interactable = false;
     }
 
     protected override void ResumeButtons()
     {
-        btnOnline.interactable = true;
+        btnOnlinePVP.interactable = true;
     }
 }

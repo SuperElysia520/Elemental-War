@@ -3588,8 +3588,25 @@ MonoBehaviour:
   lobbyStatePrefab: {fileID: 2841426314512257430, guid: 1c03ba909074cdb4d97235de4118fc64,
     type: 3}
   maxPlayers: 3
+  pvpMaxPlayers: 10
   discovery: {fileID: 638794295}
   playerName: 
+  playerPrefabResourcePaths:
+  - Players/Lumine_Net
+  - Players/Furina_Net
+  - Players/Aether_Net
+  pvpPlayerPrefabResourcePaths:
+  - Players/PVP/Lumine_PVP_Net
+  - Players/PVP/Furina_PVP_Net
+  - Players/PVP/Aether_PVP_Net
+  playerSpawnPoints:
+  - {x: 2.934, y: 0.121, z: -21.072}
+  - {x: 0.493, y: 0.124, z: -20.643}
+  - {x: -1.82, y: 0.096, z: -20.691}
+  redBaseObjectName: "\u57FA\u5730-red"
+  blueBaseObjectName: "\u57FA\u5730-blue"
+  pvpSpawnSpacing: 1.5
+  pvpBaseLocalSpawnCenter: {x: 13.65, y: -8.8, z: 2.65}
 --- !u!114 &638794297
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6238,8 +6255,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   show: 1
-  btnOnline: {fileID: 551333532}
-  btnContinue: {fileID: 2080406882}
+  btnOnlinePVP: {fileID: 551333532}
+  btnContinuePVE: {fileID: 2080406882}
   btnNewGame: {fileID: 1077764286}
   btnRead: {fileID: 1147003197}
   btnCharacter: {fileID: 1698325203}
@@ -8039,7 +8056,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u521B\u5EFA\u7F51\u7EDC\u5927\u5385"
+  m_text: "\u521B\u5EFAPVE\u8054\u673A\u623F\u95F4"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: c623446a08044a1439d53ea98fd12e8e, type: 2}
   m_sharedMaterial: {fileID: 8150203353884383006, guid: c623446a08044a1439d53ea98fd12e8e,
@@ -10367,7 +10384,7 @@ GameObject:
   - component: {fileID: 2071931272}
   - component: {fileID: 2071931275}
   m_Layer: 9
-  m_Name: LobbyMenu
+  m_Name: PVELobbyMenu
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -17379,6 +17396,22 @@ MonoBehaviour:
   bulletSparkPrefab: {fileID: 1238843893459588, guid: df1a1922af2b37e4f9ade4203d8566bd,
     type: 3}
   bulletInterval: 0.15
+  damage: 34
+  range: 250
+  hitMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  headDamageMultiplier: 4
+  limbDamageMultiplier: 0.75
+  fallbackHeadHeight: 0.78
+  fallbackLimbHeight: 0.32
+  baseSpread: 0.08
+  moveSpreadPenalty: 0.85
+  sprintSpreadPenalty: 2.5
+  airSpreadPenalty: 4
+  spreadPerShot: 0.11
+  maxSpraySpread: 1.5
+  aimingSpreadMultiplier: 0.55
 --- !u!4 &4600607813000536407
 Transform:
   m_ObjectHideFlags: 0

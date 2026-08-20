@@ -57,6 +57,7 @@ public class StateMachine
     {
         if (currentState != null)
             currentState.Exit();
+        currentState = null;
         // 清空状态字典
         foreach (StateBase state in stateDic.Values)
             state.Destory();

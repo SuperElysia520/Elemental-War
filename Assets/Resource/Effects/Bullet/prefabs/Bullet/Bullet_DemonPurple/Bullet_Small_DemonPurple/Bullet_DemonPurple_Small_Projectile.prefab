@@ -5034,10 +5034,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e4c38d18763834944a058795bfcc1d56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  damage: 10
+  damage: 35
   rb: {fileID: 0}
-  flyPower: 80
+  flyPower: 800
   lifeTime: 8
+  isCosmetic: 0
 --- !u!1 &1540588367011230
 GameObject:
   m_ObjectHideFlags: 0

@@ -15,7 +15,13 @@ public class PlayerIdleState : PlayerStateBase
 
     public override void Update()
     {
+        if (!CanUpdate)
+            return;
+
         base.Update();
+
+        if (!CanUpdate)
+            return;
 
         // 检测是否被玩家控制
         if (IsBeControl())
@@ -33,7 +39,6 @@ public class PlayerIdleState : PlayerStateBase
         // 人机模式
         else
         {
-            Debug.Log("Idel");
             if (playerModel.DistanceOfCurrentPlayerModel() > playerModel.stoppingDistance)
             {
                 playerModel.SwitchState(PlayerState.Move);

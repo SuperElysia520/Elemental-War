@@ -1,15 +1,20 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Drawing.Printing;
 using UnityEngine;
+using UnityEngine.Rendering.Universal.Internal;
 
 public class PlayerWeapnBullet : MonoBehaviour
 {
-    [Tooltip("伤害")] public int damage = 10;
+    [Tooltip("伤害")] public int damage = 35;
     [HideInInspector] public Rigidbody rb;
-    [Tooltip("推力")] public float flyPower = 30f;
+    [Tooltip("推力")] public float flyPower = 700f;
     [Tooltip("存活时间")] public float lifeTime = 8f;
-    
+
+    /// <summary>纯视觉子弹（远端镜像），不参与碰撞与伤害判定</summary>
+    [HideInInspector] public bool isCosmetic;
+
     private Vector3 prePosition; // 记录子弹上一帧的位置
 
     public void Awake()
@@ -28,12 +33,18 @@ public class PlayerWeapnBullet : MonoBehaviour
 
     private void Update()
     {
+        if (isCosmetic)
+            return;
+
         CheckCollision();
         prePosition = transform.position;
     }
 
     void CheckInitialOverlap()
     {
+        if (isCosmetic)
+            return;
+
         Collider[] hitColliders = Physics.OverlapSphere(transform.position, 0.1f);
         foreach (var col in hitColliders)
         {

@@ -28,6 +28,7 @@ public class LanDiscovery : MonoBehaviour
     private int m_MaxPlayers = 3;
     private bool m_IsStarted = false;
     private int m_GamePort = 7777;
+    private LobbyGameMode m_GameMode = LobbyGameMode.PVE;
 
     private UdpClient m_BroadcastClient;
     private UdpClient m_ListenClient;
@@ -53,6 +54,7 @@ public class LanDiscovery : MonoBehaviour
         public int maxPlayers;
         public bool isStarted;
         public int gamePort;   // 游戏连接端口（UnityTransport 监听端口）
+        public byte gameMode;  // LobbyGameMode；旧广播缺省为 0（PVE）
     }
 
     public class RoomEntry
@@ -62,19 +64,27 @@ public class LanDiscovery : MonoBehaviour
         public int maxPlayers;
         public bool isStarted;
         public int gamePort;
+        public LobbyGameMode gameMode;
         public IPEndPoint hostEndPoint;
         public float lastSeenTime;
     }
 
     // ---- 房主侧 API ----
 
-    public void StartBroadcast(string roomName, int currentPlayers, int maxPlayers, bool isStarted, int gamePort)
+    public void StartBroadcast(
+        string roomName,
+        int currentPlayers,
+        int maxPlayers,
+        bool isStarted,
+        int gamePort,
+        LobbyGameMode gameMode)
     {
         m_RoomName = roomName;
         m_CurrentPlayers = currentPlayers;
         m_MaxPlayers = maxPlayers;
         m_IsStarted = isStarted;
         m_GamePort = gamePort;
+        m_GameMode = gameMode;
 
         if (m_IsBroadcasting)
             return;
@@ -168,6 +178,7 @@ public class LanDiscovery : MonoBehaviour
                 maxPlayers = m_MaxPlayers,
                 isStarted = m_IsStarted,
                 gamePort = m_GamePort,
+                gameMode = (byte)m_GameMode,
             };
             string json = JsonUtility.ToJson(payload);
             byte[] data = Encoding.UTF8.GetBytes(MagicHeader + "|" + json);
@@ -231,13 +242,15 @@ public class LanDiscovery : MonoBehaviour
             entry.currentPlayers != payload.currentPlayers ||
             entry.maxPlayers != payload.maxPlayers ||
             entry.isStarted != payload.isStarted ||
-            entry.gamePort != payload.gamePort;
+            entry.gamePort != payload.gamePort ||
+            entry.gameMode != (LobbyGameMode)payload.gameMode;
 
         entry.roomName = payload.roomName;
         entry.currentPlayers = payload.currentPlayers;
         entry.maxPlayers = payload.maxPlayers;
         entry.isStarted = payload.isStarted;
         entry.gamePort = payload.gamePort;
+        entry.gameMode = (LobbyGameMode)payload.gameMode;
         entry.hostEndPoint = remote;
         entry.lastSeenTime = Time.time;
 

@@ -34,7 +34,14 @@ public class PlayerMoveState : PlayerStateBase
 
     public override void Update()
     {
+        if (!CanUpdate)
+            return;
+
         base.Update();
+
+        if (!CanUpdate)
+            return;
+
         // 检测是否被玩家控制
         if (IsBeControl())
         {
@@ -62,17 +69,11 @@ public class PlayerMoveState : PlayerStateBase
             playerModel.animator.SetFloat(moveBlendHash, moveBlend); // 将浮点数传递给动画控制器，第一个参数用于查找，第二个参数用于传递的值
             #endregion
 
-            #region 处理方向
-            // 计算本地空间移动方向与模型正前方之间的夹角
-            float rad = Mathf.Atan2(playerController.localMovement.x, playerController.localMovement.z);
-            // 旋转到移动方向
-            playerModel.transform.Rotate(0, rad * playerController.rotationSpeed * Time.deltaTime, 0);
-            #endregion
+            // 第一人称下身体朝向已由 PlayerController 直接设为相机 yaw，这里不再旋转模型
         }
         // 人机模式
         else
         {
-            Debug.Log("Move");
             #region 处理移动速度
             if (playerModel.DistanceOfCurrentPlayerModel() - playerModel.stoppingDistance < 2f)
             {

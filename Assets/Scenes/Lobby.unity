@@ -122,7 +122,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &582441176
+--- !u!1 &568248741
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -130,11 +130,11 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 582441181}
-  - component: {fileID: 582441180}
-  - component: {fileID: 582441179}
-  - component: {fileID: 582441178}
-  - component: {fileID: 582441177}
+  - component: {fileID: 568248746}
+  - component: {fileID: 568248745}
+  - component: {fileID: 568248744}
+  - component: {fileID: 568248743}
+  - component: {fileID: 568248742}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -142,13 +142,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &582441177
+--- !u!114 &568248742
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 582441176}
+  m_GameObject: {fileID: 568248741}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0287f264d3529674fa2a2d8d6c19e189, type: 3}
@@ -156,31 +156,39 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   broadcastInterval: 1
   roomTimeout: 4
---- !u!114 &582441178
+--- !u!114 &568248743
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 582441176}
+  m_GameObject: {fileID: 568248741}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 626c517216b16c24f93440a9520868e9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  transport: {fileID: 582441179}
+  transport: {fileID: 568248744}
   lobbyStatePrefab: {fileID: 2841426314512257430, guid: 1c03ba909074cdb4d97235de4118fc64,
     type: 3}
   maxPlayers: 3
-  discovery: {fileID: 582441177}
+  discovery: {fileID: 568248742}
   playerName: 
---- !u!114 &582441179
+  playerPrefabResourcePaths:
+  - Players/Lumine_Net
+  - Players/Furina_Net
+  - Players/Aether_Net
+  playerSpawnPoints:
+  - {x: 2.934, y: 0.121, z: -21.072}
+  - {x: 0.493, y: 0.124, z: -20.643}
+  - {x: -1.82, y: 0.096, z: -20.691}
+--- !u!114 &568248744
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 582441176}
+  m_GameObject: {fileID: 568248741}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6960e84d07fb87f47956e7a81d71c4e6, type: 3}
@@ -201,13 +209,13 @@ MonoBehaviour:
     PacketDelayMS: 0
     PacketJitterMS: 0
     PacketDropRate: 0
---- !u!114 &582441180
+--- !u!114 &568248745
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 582441176}
+  m_GameObject: {fileID: 568248741}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 593a2fe42fa9d37498c96f9a383b6521, type: 3}
@@ -215,7 +223,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   NetworkConfig:
     ProtocolVersion: 0
-    NetworkTransport: {fileID: 582441179}
+    NetworkTransport: {fileID: 568248744}
     PlayerPrefab: {fileID: 0}
     Prefabs:
       NetworkPrefabsLists:
@@ -238,13 +246,13 @@ MonoBehaviour:
     OldPrefabList: []
   RunInBackground: 1
   LogLevel: 1
---- !u!4 &582441181
+--- !u!4 &568248746
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 582441176}
+  m_GameObject: {fileID: 568248741}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -253,7 +261,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &653746440
+--- !u!1 &1198093098
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -261,8 +269,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 653746442}
-  - component: {fileID: 653746441}
+  - component: {fileID: 1198093100}
+  - component: {fileID: 1198093099}
   m_Layer: 0
   m_Name: LobbyTestGUI
   m_TagString: Untagged
@@ -270,25 +278,25 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &653746441
+--- !u!114 &1198093099
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 653746440}
+  m_GameObject: {fileID: 1198093098}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f807752710425f648847ed7c5d24c548, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
---- !u!4 &653746442
+--- !u!4 &1198093100
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 653746440}
+  m_GameObject: {fileID: 1198093098}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -297,7 +305,7 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &1149741272
+--- !u!1 &2007499841
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -305,8 +313,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1149741274}
-  - component: {fileID: 1149741273}
+  - component: {fileID: 2007499843}
+  - component: {fileID: 2007499842}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -314,13 +322,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!20 &1149741273
+--- !u!20 &2007499842
 Camera:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1149741272}
+  m_GameObject: {fileID: 2007499841}
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 1
@@ -365,13 +373,13 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
---- !u!4 &1149741274
+--- !u!4 &2007499843
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1149741272}
+  m_GameObject: {fileID: 2007499841}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -384,6 +392,6 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1149741274}
-  - {fileID: 582441181}
-  - {fileID: 653746442}
+  - {fileID: 2007499843}
+  - {fileID: 568248746}
+  - {fileID: 1198093100}

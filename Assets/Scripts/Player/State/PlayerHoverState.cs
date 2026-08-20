@@ -15,7 +15,13 @@ public class PlayerHoverState : PlayerStateBase
 
     public override void Update()
     {
+        if (!CanUpdate)
+            return;
+
         base.Update();
+
+        if (!CanUpdate)
+            return;
 
         #region 检测角色是否落在地面上
         if (playerModel.cc.isGrounded)

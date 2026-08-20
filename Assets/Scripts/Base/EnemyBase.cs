@@ -191,6 +191,53 @@ public abstract class EnemyBase : MonoBehaviour, IStateMachineOwner
     }
 
     /// <summary>
+    /// Hitscan 射线命中入口。
+    /// </summary>
+    public virtual void Hurt(float damage, Vector3 hitPoint, Vector3 shotDirection)
+    {
+        if (isDead || damage <= 0f)
+            return;
+
+        if (animator != null)
+        {
+            animator.SetTrigger(hitHash);
+            slowMoveAnimation();
+        }
+
+        Quaternion hitRotation = shotDirection.sqrMagnitude > 0.000001f
+            ? Quaternion.LookRotation(-shotDirection.normalized)
+            : Quaternion.identity;
+        if (bloodSmashPrefab != null)
+            Destroy(Instantiate(bloodSmashPrefab, hitPoint, hitRotation), 3f);
+        if (bloodDrippingPrefab != null)
+            Destroy(Instantiate(bloodDrippingPrefab, transform.position + Vector3.up * 0.1f, Quaternion.identity), 3f);
+
+        currentHealth -= damage;
+        if (currentHealth > 0f)
+        {
+            healthBarShow_timer = 0f;
+            if (healthBar != null)
+            {
+                EnemyHealthBarUI healthBarUI = healthBar.GetComponent<EnemyHealthBarUI>();
+                if (healthBarUI != null)
+                    healthBarUI.UpdateHealthBar(currentHealth / health);
+            }
+            return;
+        }
+
+        currentHealth = 0f;
+        isDead = true;
+        SwitchState(EnemyState.Dead);
+        if (navMeshAgent != null)
+            navMeshAgent.enabled = false;
+        BoxCollider bodyCollider = GetComponent<BoxCollider>();
+        if (bodyCollider != null)
+            bodyCollider.enabled = false;
+        if (healthBar != null)
+            Destroy(healthBar);
+    }
+
+    /// <summary>
     /// 是否存在攻击目标
     /// </summary>
     /// <returns></returns>
