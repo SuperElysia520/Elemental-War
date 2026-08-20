@@ -132,7 +132,7 @@ public class PlayerWeapon : MonoBehaviour
 
         PerformHitscan(origin, direction);
         // 真实伤害已由射线立即判定，子弹预制体只作为曳光视觉。
-        SpawnVisual(origin, direction, true);
+        SpawnVisual(origin, direction);
         // 广播给远端时用第三人称枪口位置，让远端在自己屏幕上看子弹从该角色枪口飞出
         onFire?.Invoke(bulletSpawnPoint != null ? bulletSpawnPoint.position : origin, direction);
         return true;
@@ -373,15 +373,14 @@ public class PlayerWeapon : MonoBehaviour
     }
 
     /// <summary>
-    /// 生成子弹与火花视觉。cosmetic=true 时只做视觉（远端镜像用），不参与伤害判定。
+    /// 生成纯视觉曳光与枪口火花，不参与伤害判定。
     /// </summary>
-    public void SpawnVisual(Vector3 spawnPos, Vector3 direction, bool cosmetic)
+    public void SpawnVisual(Vector3 spawnPos, Vector3 direction)
     {
         if (bulletEffectPrefab != null)
         {
             PlayerWeapnBullet bulletEffect = Instantiate(bulletEffectPrefab, spawnPos, Quaternion.identity);
             bulletEffect.transform.forward = direction; // 设置子弹朝向
-            bulletEffect.isCosmetic = cosmetic;
         }
         // 实例化火花预制体
         if (bulletSparkPrefab != null)

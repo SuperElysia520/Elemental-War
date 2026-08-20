@@ -200,7 +200,7 @@ public class PlayerNetworkSync : NetworkBehaviour
             return;
 
         playerModel.weapon.PlayRemoteShotSound();
-        playerModel.weapon.SpawnVisual(spawnPos, direction, true);
+        playerModel.weapon.SpawnVisual(spawnPos, direction);
     }
 
     // ---- 换弹音效同步 ----

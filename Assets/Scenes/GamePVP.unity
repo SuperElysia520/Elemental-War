@@ -31540,6 +31540,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5943640838806276980, guid: ca00f04f9d346484fbed2ff4cb8b5783,
         type: 3}
+      propertyPath: magazineSize
+      value: 25
+      objectReference: {fileID: 0}
+    - target: {fileID: 5943640838806276980, guid: ca00f04f9d346484fbed2ff4cb8b5783,
+        type: 3}
       propertyPath: singleShotSound
       value: 
       objectReference: {fileID: 8300000, guid: aefbed4c9961b1a4b8c7aa0af089067b, type: 3}
@@ -32098,6 +32103,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8191754990728209982, guid: d2b373eb7f47f664d87d880087dcea12,
         type: 3}
+      propertyPath: magazineSize
+      value: 25
+      objectReference: {fileID: 0}
+    - target: {fileID: 8191754990728209982, guid: d2b373eb7f47f664d87d880087dcea12,
+        type: 3}
       propertyPath: singleShotSound
       value: 
       objectReference: {fileID: 8300000, guid: aefbed4c9961b1a4b8c7aa0af089067b, type: 3}
@@ -32472,6 +32482,11 @@ PrefabInstance:
       propertyPath: m_Data.m_SourceObjects.m_Item0.transform
       value: 
       objectReference: {fileID: 1439559124}
+    - target: {fileID: 6935309225313339149, guid: e7cb2d15b8823da49a58948a2255f937,
+        type: 3}
+      propertyPath: magazineSize
+      value: 25
+      objectReference: {fileID: 0}
     - target: {fileID: 6935309225313339149, guid: e7cb2d15b8823da49a58948a2255f937,
         type: 3}
       propertyPath: singleShotSound

@@ -1,10 +1,6 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Diagnostics;
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.UI;
 
 public enum EnemyState
 {
@@ -148,50 +144,7 @@ public abstract class EnemyBase : MonoBehaviour, IStateMachineOwner
     }
 
     /// <summary>
-    /// 受击
-    /// </summary>
-    public virtual void Hurt(PlayerWeapnBullet bullet, float damageMultiplier = 1)
-    {
-        #region 受击动画相关
-        animator.SetTrigger(hitHash);
-        slowMoveAnimation();
-        #endregion
-        
-        #region 生成喷血特效
-        // 计算子弹的方向
-        Vector3 bulletDir = bullet.transform.position;
-        // 根据子弹的方向计算旋转
-        Quaternion rotation = Quaternion.LookRotation(-bulletDir);
-        // 生成喷血特效
-        Destroy(Instantiate(bloodDrippingPrefab, bullet.transform.position, rotation), 3);
-        #endregion
-
-        #region 生成流血滴落特效
-        Destroy(Instantiate(bloodDrippingPrefab,transform.position + Vector3.up * 0.1f, Quaternion.Euler(0, 0, 0)), 3);
-        #endregion
-
-        #region 血条相关
-        currentHealth -= bullet.damage * damageMultiplier;
-        if (currentHealth > 0)
-        {
-            healthBarShow_timer = 0;
-            // 更新血条
-            healthBar.GetComponent<EnemyHealthBarUI>().UpdateHealthBar(currentHealth / health);
-        }
-        else
-        {
-            SwitchState(EnemyState.Dead);
-            navMeshAgent.enabled = false;
-            GetComponent<BoxCollider>().enabled = false;
-            currentHealth = 0;
-            isDead = true;
-            Destroy(healthBar); //销毁血条
-        }
-        #endregion
-    }
-
-    /// <summary>
-    /// Hitscan 射线命中入口。
+    /// 唯一的玩家枪械伤害入口：伤害值由 PlayerWeapon 的 hitscan 计算后传入。
     /// </summary>
     public virtual void Hurt(float damage, Vector3 hitPoint, Vector3 shotDirection)
     {
