@@ -17,6 +17,12 @@ public static class PlayerNetworkPrefabBuilder
     private const string OutDir = "Assets/Resources/Players";
     private const string PvpOutDir = "Assets/Resources/Players/PVP";
     private const string DefaultPrefabsPath = "Assets/DefaultNetworkPrefabs.asset";
+    private const string BodyBloodImpactPath =
+        "Assets/Resource/Effects/Hurt/prefab/Red/Blood_Impact_Small_Red.prefab";
+    private const string HeadBloodImpactPath =
+        "Assets/Resource/Effects/Hurt/prefab/Red/Blood_Impact_Medium_Red.prefab";
+    private const string HeadshotReceivedSoundPath =
+        "Assets/Resource/Audio/爆头 击中头盔 钢盔命中 射击反馈.mp3";
 
     private static readonly string[] Names = { "Lumine", "Furina", "Aether" };
 
@@ -65,8 +71,10 @@ public static class PlayerNetworkPrefabBuilder
             GameObject pvpInst = (GameObject)PrefabUtility.InstantiatePrefab(src);
             pvpInst.name = name + "_PVP_Net";
             ConfigureNetworkPlayer(pvpInst);
-            if (pvpInst.GetComponent<PvpPlayerCombat>() == null)
-                pvpInst.AddComponent<PvpPlayerCombat>();
+            PvpPlayerCombat pvpCombat = pvpInst.GetComponent<PvpPlayerCombat>();
+            if (pvpCombat == null)
+                pvpCombat = pvpInst.AddComponent<PvpPlayerCombat>();
+            ConfigurePvpHitFeedback(pvpCombat);
 
             string pvpOutPath = $"{PvpOutDir}/{name}_PVP_Net.prefab";
             PrefabUtility.SaveAsPrefabAsset(pvpInst, pvpOutPath);
@@ -93,6 +101,18 @@ public static class PlayerNetworkPrefabBuilder
         if (sync == null)
             sync = instance.AddComponent<PlayerNetworkSync>();
         sync.playerModel = instance.GetComponent<PlayerModel>();
+    }
+
+    private static void ConfigurePvpHitFeedback(PvpPlayerCombat combat)
+    {
+        if (combat == null)
+            return;
+
+        combat.bodyBloodImpactPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(BodyBloodImpactPath);
+        combat.headBloodImpactPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(HeadBloodImpactPath);
+        combat.headshotReceivedSound = AssetDatabase.LoadAssetAtPath<AudioClip>(HeadshotReceivedSoundPath);
+        combat.bloodImpactLifetime = 3f;
+        combat.headshotReceivedVolume = 1f;
     }
 
     private static NetworkPrefabsList LoadOrCreateList()

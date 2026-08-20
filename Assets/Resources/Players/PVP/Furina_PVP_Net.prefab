@@ -191,6 +191,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxHealth: 100
   respawnDelay: 3
+  bodyBloodImpactPrefab: {fileID: 1041181722733882, guid: 46cb51842826d77438ecf64a2ff442ae, type: 3}
+  headBloodImpactPrefab: {fileID: 1855497614338780, guid: 0e62d5b045839404282de40af048cf14, type: 3}
+  bloodImpactLifetime: 3
+  headshotReceivedSound: {fileID: 8300000, guid: 6fded06dc8008a14b85aa371d92f924b, type: 3}
+  headshotReceivedVolume: 1
 --- !u!114 &7655271560724103631 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 6160951486526021780, guid: e7cb2d15b8823da49a58948a2255f937,

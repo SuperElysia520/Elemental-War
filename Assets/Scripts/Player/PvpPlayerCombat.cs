@@ -23,6 +23,23 @@ public class PvpPlayerCombat : NetworkBehaviour
     [Tooltip("头部命中区相对头部骨骼的世界垂直偏移")]
     public float headHitboxVerticalOffset = 0.06f;
 
+    [Header("PVP 命中反馈")]
+    [Tooltip("身体命中时在真实命中点生成的红色血花")]
+    public GameObject bodyBloodImpactPrefab;
+
+    [Tooltip("爆头时在真实命中点生成的较大红色血花")]
+    public GameObject headBloodImpactPrefab;
+
+    [Tooltip("血花自动销毁时间")]
+    public float bloodImpactLifetime = 3f;
+
+    [Tooltip("本地玩家被敌方爆头时播放的 2D 音效")]
+    public AudioClip headshotReceivedSound;
+
+    [Range(0f, 1f)]
+    [Tooltip("被爆头音效音量")]
+    public float headshotReceivedVolume = 1f;
+
     /// <summary>开局生成前由服务器从房间快照写入，之后随玩家对象同步，不再依赖客户端大厅列表时序。</summary>
     public readonly NetworkVariable<byte> TeamValue = new NetworkVariable<byte>(
         (byte)LobbyTeam.None,
@@ -77,6 +94,7 @@ public class PvpPlayerCombat : NetworkBehaviour
     private bool[] m_ColliderEnabledStates;
     private Coroutine m_RespawnCoroutine;
     private bool m_IsPvpSession;
+    private AudioSource m_LocalHeadshotAudioSource;
 
     public LobbyTeam Team => (LobbyTeam)TeamValue.Value;
     public int TeamNumber => TeamNumberValue.Value;
@@ -202,6 +220,7 @@ public class PvpPlayerCombat : NetworkBehaviour
         float nearestSolidDistance = weapon.range;
         PvpHeadHitbox nearestHeadHitbox = null;
         float nearestHeadDistance = weapon.range;
+        Vector3 nearestHeadPoint = default;
         foreach (RaycastHit hit in hits)
         {
             if (hit.collider == null)
@@ -217,6 +236,7 @@ public class PvpPlayerCombat : NetworkBehaviour
                 {
                     nearestHeadHitbox = headHitbox;
                     nearestHeadDistance = hit.distance;
+                    nearestHeadPoint = hit.point;
                 }
                 continue;
             }
@@ -232,16 +252,20 @@ public class PvpPlayerCombat : NetworkBehaviour
             ? nearestSolid.collider.GetComponentInParent<PvpPlayerCombat>()
             : null;
         bool isHeadshot = false;
+        Vector3 hitPoint = nearestSolid.collider != null ? nearestSolid.point : nearestHeadPoint;
 
         if (victim != null)
         {
             // 根 CharacterController 会包住头部球；只要同一受害者的专用头部球也被射线穿过，按爆头处理。
-            isHeadshot = HasHeadHitForVictim(hits, shooter.transform, victim);
+            isHeadshot = TryGetHeadHitForVictim(hits, shooter.transform, victim, out Vector3 headHitPoint);
+            if (isHeadshot)
+                hitPoint = headHitPoint;
         }
         else if (nearestHeadHitbox != null && nearestHeadDistance < nearestSolidDistance)
         {
             victim = nearestHeadHitbox.Owner;
             isHeadshot = true;
+            hitPoint = nearestHeadPoint;
         }
 
         if (victim == null || victim == shooterCombat)
@@ -250,14 +274,23 @@ public class PvpPlayerCombat : NetworkBehaviour
         float damageMultiplier = isHeadshot
             ? weapon.headDamageMultiplier
             : CalculateBodyHitMultiplier(nearestSolid.collider, nearestSolid.point, weapon);
-        victim.ApplyServerDamage(shooterCombat, weapon.damage * damageMultiplier, isHeadshot);
+        victim.ApplyServerDamage(
+            shooterCombat,
+            weapon.damage * damageMultiplier,
+            isHeadshot,
+            hitPoint,
+            direction);
     }
 
-    private static bool HasHeadHitForVictim(
+    private static bool TryGetHeadHitForVictim(
         RaycastHit[] hits,
         Transform shooterTransform,
-        PvpPlayerCombat victim)
+        PvpPlayerCombat victim,
+        out Vector3 headHitPoint)
     {
+        headHitPoint = default;
+        float nearestDistance = float.MaxValue;
+        bool found = false;
         foreach (RaycastHit hit in hits)
         {
             if (hit.collider == null)
@@ -267,10 +300,14 @@ public class PvpPlayerCombat : NetworkBehaviour
                 continue;
 
             PvpHeadHitbox headHitbox = hit.collider.GetComponent<PvpHeadHitbox>();
-            if (headHitbox != null && headHitbox.Owner == victim)
-                return true;
+            if (headHitbox != null && headHitbox.Owner == victim && hit.distance < nearestDistance)
+            {
+                nearestDistance = hit.distance;
+                headHitPoint = hit.point;
+                found = true;
+            }
         }
-        return false;
+        return found;
     }
 
     private static float CalculateBodyHitMultiplier(Collider collider, Vector3 hitPoint, PlayerWeapon weapon)
@@ -285,7 +322,12 @@ public class PvpPlayerCombat : NetworkBehaviour
         return 1f;
     }
 
-    private void ApplyServerDamage(PvpPlayerCombat attacker, float damage, bool isHeadshot)
+    private void ApplyServerDamage(
+        PvpPlayerCombat attacker,
+        float damage,
+        bool isHeadshot,
+        Vector3 hitPoint,
+        Vector3 shotDirection)
     {
         if (!IsServer || !m_IsPvpSession || IsDead.Value || damage <= 0f)
             return;
@@ -300,6 +342,7 @@ public class PvpPlayerCombat : NetworkBehaviour
             return; // 同队伤害和无效队伍直接拒绝
 
         CurrentHealth.Value = Mathf.Max(0f, CurrentHealth.Value - damage);
+        ShowHitFeedbackClientRpc(hitPoint, shotDirection, isHeadshot);
         if (CurrentHealth.Value > 0f)
             return;
 
@@ -313,6 +356,33 @@ public class PvpPlayerCombat : NetworkBehaviour
 
         if (!lobby.IsPvpMatchOver)
             m_RespawnCoroutine = StartCoroutine(RespawnAfterDelay());
+    }
+
+    [ClientRpc]
+    private void ShowHitFeedbackClientRpc(Vector3 hitPoint, Vector3 shotDirection, bool isHeadshot)
+    {
+        GameObject bloodPrefab = isHeadshot ? headBloodImpactPrefab : bodyBloodImpactPrefab;
+        if (bloodPrefab != null)
+        {
+            Quaternion rotation = shotDirection.sqrMagnitude > 0.000001f
+                ? Quaternion.LookRotation(-shotDirection.normalized)
+                : Quaternion.identity;
+            GameObject bloodImpact = Instantiate(bloodPrefab, hitPoint, rotation);
+            Destroy(bloodImpact, Mathf.Max(0.1f, bloodImpactLifetime));
+        }
+
+        // 被爆头反馈只给受害玩家本人播放；血花仍由此 RPC 在所有客户端生成。
+        if (isHeadshot && IsOwner && headshotReceivedSound != null)
+        {
+            if (m_LocalHeadshotAudioSource == null)
+            {
+                m_LocalHeadshotAudioSource = gameObject.AddComponent<AudioSource>();
+                m_LocalHeadshotAudioSource.playOnAwake = false;
+                m_LocalHeadshotAudioSource.loop = false;
+                m_LocalHeadshotAudioSource.spatialBlend = 0f;
+            }
+            m_LocalHeadshotAudioSource.PlayOneShot(headshotReceivedSound, headshotReceivedVolume);
+        }
     }
 
     private void EnsureHeadHitbox()

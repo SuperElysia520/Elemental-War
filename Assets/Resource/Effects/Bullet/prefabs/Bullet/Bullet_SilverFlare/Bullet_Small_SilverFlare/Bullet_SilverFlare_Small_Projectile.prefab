@@ -5034,7 +5034,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e4c38d18763834944a058795bfcc1d56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  damage: 35
+  damage: 34
   rb: {fileID: 0}
   flyPower: 800
   lifeTime: 8
