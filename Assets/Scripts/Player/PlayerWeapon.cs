@@ -115,6 +115,19 @@ public class PlayerWeapon : MonoBehaviour
     /// <returns>本次是否真正发射（受发射间隔限制）。调用方据此决定是否播放开火视觉/抖动。</returns>
     public bool Fire(Vector3 origin, Vector3 direction, float spreadDegrees = 0f)
     {
+        return Fire(origin, direction, origin, spreadDegrees);
+    }
+
+    /// <summary>
+    /// 命中射线和视觉曳光使用不同起点。PVP 的真实判定从相机准星射线出发，
+    /// 第一人称曳光仍从 viewmodel 枪口生成，避免贴脸时枪口越过目标命中面。
+    /// </summary>
+    public bool Fire(
+        Vector3 hitOrigin,
+        Vector3 hitDirection,
+        Vector3 visualOrigin,
+        float spreadDegrees)
+    {
         if (IsReloading || CurrentAmmo <= 0)
             return false;
 
@@ -127,14 +140,14 @@ public class PlayerWeapon : MonoBehaviour
         if (CurrentAmmo <= 0)
             StopLocalSustainedFire();
 
-        direction = ApplySpread(direction.normalized, spreadDegrees);
-        LastShotOrigin = origin;
+        Vector3 direction = ApplySpread(hitDirection.normalized, spreadDegrees);
+        LastShotOrigin = hitOrigin;
 
-        PerformHitscan(origin, direction);
+        PerformHitscan(hitOrigin, direction);
         // 真实伤害已由射线立即判定，子弹预制体只作为曳光视觉。
-        SpawnVisual(origin, direction);
+        SpawnVisual(visualOrigin, direction);
         // 广播给远端时用第三人称枪口位置，让远端在自己屏幕上看子弹从该角色枪口飞出
-        onFire?.Invoke(bulletSpawnPoint != null ? bulletSpawnPoint.position : origin, direction);
+        onFire?.Invoke(bulletSpawnPoint != null ? bulletSpawnPoint.position : visualOrigin, direction);
         return true;
     }
 

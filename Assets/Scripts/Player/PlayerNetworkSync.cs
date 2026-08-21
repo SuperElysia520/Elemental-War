@@ -117,11 +117,13 @@ public class PlayerNetworkSync : NetworkBehaviour
             playerModel.enabled = false;
         }
 
-        // 远端位置由 OwnerNetworkTransform 直接写 transform，禁用会与之冲突的本地驱动组件
+        // 远端位置由 OwnerNetworkTransform 直接写 transform，禁用会与之冲突的本地驱动组件。
+        // PVP 必须在每个玩家客户端都保留远端 CharacterController，拥有者的 cc.Move 才能撞到其他玩家；
+        // 其 PlayerModel 已关闭，不会在远端客户端重复驱动这个 CharacterController。
         var cc = GetComponent<CharacterController>();
-        // PVP 命中由服务器射线判定，服务器必须保留远端玩家碰撞体；普通远端客户端仍禁用。
-        bool needsServerPvpCollider = IsServer && GetComponent<PvpPlayerCombat>() != null;
-        if (cc != null && !needsServerPvpCollider) cc.enabled = false;
+        bool isPvpPlayer = GetComponent<PvpPlayerCombat>() != null;
+        if (cc != null && !isPvpPlayer)
+            cc.enabled = false;
         var agent = GetComponent<NavMeshAgent>();
         if (agent != null) agent.enabled = false;
 
@@ -199,8 +201,14 @@ public class PlayerNetworkSync : NetworkBehaviour
         if (IsOwner || playerModel == null || playerModel.weapon == null)
             return;
 
-        playerModel.weapon.PlayRemoteShotSound();
-        playerModel.weapon.SpawnVisual(spawnPos, direction);
+        PlayerWeapon weapon = playerModel.weapon;
+        // 射手上报的枪口世界坐标到达观察者时已经滞后于 NetworkTransform 插值。
+        // 使用观察者当前渲染出来的第三人称枪口，确保曳光和枪口火花始终贴在武器上。
+        Vector3 currentMuzzlePosition = weapon.bulletSpawnPoint != null
+            ? weapon.bulletSpawnPoint.position
+            : spawnPos;
+        weapon.PlayRemoteShotSound();
+        weapon.SpawnVisual(currentMuzzlePosition, direction);
     }
 
     // ---- 换弹音效同步 ----

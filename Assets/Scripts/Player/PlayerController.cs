@@ -422,8 +422,13 @@ public class PlayerController : SingleMonoBase<PlayerController>
             return;
         }
 
-        Vector3 fireOrigin = FireOrigin;
-        Vector3 fireDirection = GetFireDirection(fireOrigin);
+        Vector3 visualOrigin = FireOrigin;
+        bool usePvpAimRay = mainCamera != null &&
+            currentPlayerModel.GetComponent<PvpPlayerCombat>() != null;
+        Vector3 hitOrigin = usePvpAimRay ? mainCamera.transform.position : visualOrigin;
+        Vector3 hitDirection = usePvpAimRay
+            ? mainCamera.transform.forward
+            : GetFireDirection(visualOrigin);
         bool grounded = currentPlayerModel.cc != null && currentPlayerModel.cc.isGrounded;
         bool moving = moveInput.sqrMagnitude > 0.0001f;
         float spread = weapon.CalculateSpread(
@@ -433,7 +438,10 @@ public class PlayerController : SingleMonoBase<PlayerController>
             isAiming,
             recoilShotIndex);
 
-        if (weapon.Fire(fireOrigin, fireDirection, spread))
+        bool fired = usePvpAimRay
+            ? weapon.Fire(hitOrigin, hitDirection, visualOrigin, spread)
+            : weapon.Fire(hitOrigin, hitDirection, spread);
+        if (fired)
         {
             PlayFireView();
             ShakeCamera();

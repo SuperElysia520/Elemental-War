@@ -10,6 +10,9 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class PvpPlayerCombat : NetworkBehaviour
 {
+    private const float ShotOriginProbeRadius = 0.02f;
+    private static readonly Collider[] ShotOriginOverlapBuffer = new Collider[32];
+
     [Tooltip("PVP 最大生命值")]
     public float maxHealth = 100f;
 
@@ -209,6 +212,17 @@ public class PvpPlayerCombat : NetworkBehaviour
             : shooter.transform.forward;
 
         Physics.SyncTransforms();
+        Collider originSolidCollider = null;
+        Vector3 originSolidPoint = safeOrigin;
+        PvpHeadHitbox originHeadHitbox = null;
+        FindShotOriginOverlaps(
+            shooter.transform,
+            safeOrigin,
+            weapon.hitMask,
+            out originSolidCollider,
+            out originSolidPoint,
+            out originHeadHitbox);
+
         RaycastHit[] hits = Physics.RaycastAll(
             safeOrigin,
             direction,
@@ -216,11 +230,12 @@ public class PvpPlayerCombat : NetworkBehaviour
             weapon.hitMask,
             QueryTriggerInteraction.Collide);
 
-        RaycastHit nearestSolid = default;
-        float nearestSolidDistance = weapon.range;
-        PvpHeadHitbox nearestHeadHitbox = null;
-        float nearestHeadDistance = weapon.range;
-        Vector3 nearestHeadPoint = default;
+        Collider nearestSolidCollider = originSolidCollider;
+        float nearestSolidDistance = originSolidCollider != null ? 0f : weapon.range;
+        Vector3 nearestSolidPoint = originSolidPoint;
+        PvpHeadHitbox nearestHeadHitbox = originHeadHitbox;
+        float nearestHeadDistance = originHeadHitbox != null ? 0f : weapon.range;
+        Vector3 nearestHeadPoint = safeOrigin;
         foreach (RaycastHit hit in hits)
         {
             if (hit.collider == null)
@@ -243,21 +258,27 @@ public class PvpPlayerCombat : NetworkBehaviour
 
             if (hit.distance < nearestSolidDistance)
             {
-                nearestSolid = hit;
+                nearestSolidCollider = hit.collider;
                 nearestSolidDistance = hit.distance;
+                nearestSolidPoint = hit.point;
             }
         }
 
-        PvpPlayerCombat victim = nearestSolid.collider != null
-            ? nearestSolid.collider.GetComponentInParent<PvpPlayerCombat>()
+        PvpPlayerCombat victim = nearestSolidCollider != null
+            ? nearestSolidCollider.GetComponentInParent<PvpPlayerCombat>()
             : null;
         bool isHeadshot = false;
-        Vector3 hitPoint = nearestSolid.collider != null ? nearestSolid.point : nearestHeadPoint;
+        Vector3 hitPoint = nearestSolidCollider != null ? nearestSolidPoint : nearestHeadPoint;
 
         if (victim != null)
         {
             // 根 CharacterController 会包住头部球；只要同一受害者的专用头部球也被射线穿过，按爆头处理。
-            isHeadshot = TryGetHeadHitForVictim(hits, shooter.transform, victim, out Vector3 headHitPoint);
+            Vector3 headHitPoint;
+            isHeadshot = originHeadHitbox != null && originHeadHitbox.Owner == victim;
+            if (!isHeadshot)
+                isHeadshot = TryGetHeadHitForVictim(hits, shooter.transform, victim, out headHitPoint);
+            else
+                headHitPoint = safeOrigin;
             if (isHeadshot)
                 hitPoint = headHitPoint;
         }
@@ -273,13 +294,70 @@ public class PvpPlayerCombat : NetworkBehaviour
 
         float damageMultiplier = isHeadshot
             ? weapon.headDamageMultiplier
-            : CalculateBodyHitMultiplier(nearestSolid.collider, nearestSolid.point, weapon);
+            : CalculateBodyHitMultiplier(nearestSolidCollider, nearestSolidPoint, weapon);
         victim.ApplyServerDamage(
             shooterCombat,
             weapon.damage * damageMultiplier,
             isHeadshot,
             hitPoint,
             direction);
+    }
+
+    /// <summary>
+    /// Unity 射线不会返回起点已经位于内部的碰撞体。第一人称枪口贴近玩家时可能伸进
+    /// CharacterController，因此先用一个极小范围探针把该碰撞体作为距离 0 的命中。
+    /// </summary>
+    private static void FindShotOriginOverlaps(
+        Transform shooterTransform,
+        Vector3 origin,
+        LayerMask hitMask,
+        out Collider nearestSolidCollider,
+        out Vector3 nearestSolidPoint,
+        out PvpHeadHitbox headHitbox)
+    {
+        nearestSolidCollider = null;
+        nearestSolidPoint = origin;
+        headHitbox = null;
+        float nearestSolidSqrDistance = float.MaxValue;
+        float nearestHeadSqrDistance = float.MaxValue;
+
+        int overlapCount = Physics.OverlapSphereNonAlloc(
+            origin,
+            ShotOriginProbeRadius,
+            ShotOriginOverlapBuffer,
+            hitMask,
+            QueryTriggerInteraction.Collide);
+
+        for (int i = 0; i < overlapCount; i++)
+        {
+            Collider candidate = ShotOriginOverlapBuffer[i];
+            if (candidate == null)
+                continue;
+
+            Transform candidateTransform = candidate.transform;
+            if (candidateTransform == shooterTransform || candidateTransform.IsChildOf(shooterTransform))
+                continue;
+
+            Vector3 closestPoint = candidate.ClosestPoint(origin);
+            float sqrDistance = (closestPoint - origin).sqrMagnitude;
+            PvpHeadHitbox candidateHeadHitbox = candidate.GetComponent<PvpHeadHitbox>();
+            if (candidate.isTrigger)
+            {
+                if (candidateHeadHitbox != null && sqrDistance < nearestHeadSqrDistance)
+                {
+                    headHitbox = candidateHeadHitbox;
+                    nearestHeadSqrDistance = sqrDistance;
+                }
+                continue;
+            }
+
+            if (sqrDistance < nearestSolidSqrDistance)
+            {
+                nearestSolidCollider = candidate;
+                nearestSolidPoint = closestPoint;
+                nearestSolidSqrDistance = sqrDistance;
+            }
+        }
     }
 
     private static bool TryGetHeadHitForVictim(
