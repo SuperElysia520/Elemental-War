@@ -137,6 +137,7 @@ public class LobbyManager : MonoBehaviour
         public byte gameMode;
         public byte operation;
         public string roomName;
+        public string clientVersion;
     }
 
     private enum ConnectionOperation : byte
@@ -317,7 +318,8 @@ public class LobbyManager : MonoBehaviour
             discovery.StartDedicatedPvpResponder(GetGamePort(), GetMaxPlayers(LobbyGameMode.PVP));
             RefreshDedicatedPvpServerStatus();
         }
-        Debug.Log("[Dedicated PVP] 服务器已启动，监听 0.0.0.0:" + GetGamePort() + "，等待玩家创建房间");
+        Debug.Log("[Dedicated PVP] 服务器已启动，版本 " + Application.version +
+                  "，监听 0.0.0.0:" + GetGamePort() + "，等待玩家创建房间");
     }
 
     private void OnHostServerStarted()
@@ -600,6 +602,15 @@ public class LobbyManager : MonoBehaviour
             message = "PVP 服务器信息无效，请刷新房间列表";
             return false;
         }
+        if (!string.Equals(room.serverVersion, Application.version, StringComparison.Ordinal))
+        {
+            string serverVersion = string.IsNullOrWhiteSpace(room.serverVersion)
+                ? "未知/旧版"
+                : room.serverVersion;
+            message = "PVP版本不一致：客户端 " + Application.version +
+                      "，服务器 " + serverVersion;
+            return false;
+        }
         if (forCreate)
         {
             if (!room.canCreate)
@@ -853,6 +864,16 @@ public class LobbyManager : MonoBehaviour
     {
         LobbyGameMode requestedMode = (LobbyGameMode)payload.gameMode;
         ConnectionOperation operation = (ConnectionOperation)payload.operation;
+        if (!string.Equals(payload.clientVersion, Application.version, StringComparison.Ordinal))
+        {
+            string clientVersion = string.IsNullOrWhiteSpace(payload.clientVersion)
+                ? "未知/旧版"
+                : payload.clientVersion;
+            RejectConnection(
+                response,
+                "PVP版本不一致：客户端 " + clientVersion + "，服务器 " + Application.version);
+            return;
+        }
         if (requestedMode != LobbyGameMode.PVP)
         {
             RejectConnection(response, "该服务器仅提供 PVP 房间");
@@ -1421,6 +1442,7 @@ public class LobbyManager : MonoBehaviour
             gameMode = (byte)gameMode,
             operation = (byte)operation,
             roomName = roomName,
+            clientVersion = Application.version,
         };
         networkManager.NetworkConfig.ConnectionData = Encoding.UTF8.GetBytes(JsonUtility.ToJson(payload));
     }

@@ -7,7 +7,7 @@ using UnityEngine;
 /// </summary>
 public class ExcludeMouse : MonoBehaviour
 {
-    public float avoidRadius = 120f; // 影响半径
+    public float avoidRadius = 10f; // 影响半径
     public float avoidForce = 400f; // 躲避速度
     public float returnForce = 2f; // 返回原位速度
 

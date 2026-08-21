@@ -83,6 +83,7 @@ public class LanDiscovery : MonoBehaviour
         public byte gameMode;  // LobbyGameMode；旧广播缺省为 0（PVE）
         public bool hasRoom;   // Dedicated PVP：该服务器槽位是否已经创建房间
         public bool canCreate; // Dedicated PVP：该服务器槽位当前是否接受建房
+        public string serverVersion; // Dedicated PVP：用于在连接前拦截不兼容客户端
     }
 
     public class RoomEntry
@@ -98,6 +99,7 @@ public class LanDiscovery : MonoBehaviour
         public bool isDedicatedPvp;
         public bool hasRoom;
         public bool canCreate;
+        public string serverVersion;
     }
 
     // ---- 房主侧 API ----
@@ -415,6 +417,7 @@ public class LanDiscovery : MonoBehaviour
                 gameMode = (byte)LobbyGameMode.PVP,
                 hasRoom = m_DedicatedHasRoom,
                 canCreate = m_DedicatedCanCreate,
+                serverVersion = Application.version,
             };
             string json = JsonUtility.ToJson(payload);
             byte[] response = Encoding.UTF8.GetBytes(DedicatedResponseHeader + "|" + json);
@@ -510,7 +513,8 @@ public class LanDiscovery : MonoBehaviour
             entry.gameMode != (LobbyGameMode)payload.gameMode ||
             entry.isDedicatedPvp != isDedicatedPvp ||
             entry.hasRoom != (isDedicatedPvp ? payload.hasRoom : true) ||
-            entry.canCreate != (isDedicatedPvp && payload.canCreate);
+            entry.canCreate != (isDedicatedPvp && payload.canCreate) ||
+            entry.serverVersion != (isDedicatedPvp ? payload.serverVersion : string.Empty);
 
         entry.roomName = payload.roomName;
         entry.currentPlayers = payload.currentPlayers;
@@ -525,6 +529,7 @@ public class LanDiscovery : MonoBehaviour
         entry.isDedicatedPvp = isDedicatedPvp;
         entry.hasRoom = isDedicatedPvp ? payload.hasRoom : true;
         entry.canCreate = isDedicatedPvp && payload.canCreate;
+        entry.serverVersion = isDedicatedPvp ? payload.serverVersion : string.Empty;
 
         if (changed)
         {

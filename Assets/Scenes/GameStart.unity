@@ -3590,7 +3590,7 @@ MonoBehaviour:
     type: 3}
   maxPlayers: 3
   pvpMaxPlayers: 10
-  dedicatedServerAddress: 8.137.153.61
+  dedicatedServerAddress: 47.108.170.58
   dedicatedServerPort: 7777
   dedicatedServerRoomCount: 5
   discovery: {fileID: 638794295}
