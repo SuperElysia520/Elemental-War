@@ -31721,20 +31721,35 @@ MonoBehaviour:
   bulletSpawnPoint: {fileID: 3723344484164268292}
   muzzleFlash: {fileID: 831696017020616750}
   sparkParticles: {fileID: 576664364607371881}
+  casingSpawnPoint: {fileID: 7759247338571068139}
+  casingPrefab: {fileID: 4420745226056240, guid: 7be59128a5ee3424faf33d7a408c0b2e,
+    type: 3}
   pvpHolographicEyeRelief: 0.22
   pvpHolographicAimSmoothTime: 0.15
   pvpHolographicReticle: {fileID: 21300000, guid: d12f9350e2b99b041b28f8714a37b6ef,
     type: 3}
   aimInSound: {fileID: 8300000, guid: 69ba206bce6297342a2c411b302365c7, type: 3}
   aimInVolume: 1
-  pvpAdsWeaponPitchKick: 0.9
-  pvpAdsWeaponYawKick: 0.28
-  pvpAdsWeaponRollKick: 0.7
-  pvpAdsWeaponBackKick: 0.008
-  pvpAdsWeaponRiseKick: 0
-  pvpAdsWeaponSideKick: 0
-  pvpAdsWeaponKickSpeed: 38
-  pvpAdsWeaponReturnSpeed: 15
+  pvpHipFireFeel:
+    rotationKick: {x: 2.35, y: 0.65, z: 1.4}
+    rotationJitter: {x: 0.16, y: 0.12, z: 0.2}
+    positionKick: {x: 0.006, y: 0.004, z: 0.022}
+    maxRotation: {x: 6.5, y: 2.8, z: 5.5}
+    maxPosition: {x: 0.025, y: 0.016, z: 0.07}
+    kickSpeed: 52
+    returnSpeed: 16
+    immediateResponse: 0.72
+    sustainedBuildUpPerShot: 0.035
+  pvpAdsFireFeel:
+    rotationKick: {x: 1.2, y: 0.34, z: 0.82}
+    rotationJitter: {x: 0.09, y: 0.06, z: 0.12}
+    positionKick: {x: 0.0015, y: 0.001, z: 0.012}
+    maxRotation: {x: 5, y: 2, z: 6}
+    maxPosition: {x: 0.01, y: 0.015, z: 0.05}
+    kickSpeed: 100
+    returnSpeed: 1
+    immediateResponse: 0.68
+    sustainedBuildUpPerShot: 0.04
 --- !u!1 &6036861880301615478
 GameObject:
   m_ObjectHideFlags: 0

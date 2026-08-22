@@ -9,9 +9,32 @@ public class FirstPersonViewmodel : MonoBehaviour
 {
     public const float PvpHolographicMagnification = 1.5f;
 
+    [System.Serializable]
+    public struct PvpShotFeel
+    {
+        [Tooltip("每发旋转冲击：X=抬枪，Y=左右偏转，Z=侧倾（填写正数）")]
+        public Vector3 rotationKick;
+        [Tooltip("每发旋转随机量；只改变视觉，不改变真实弹道")]
+        public Vector3 rotationJitter;
+        [Tooltip("每发位移冲击：X=左右，Y=向上，Z=向后（填写正数）")]
+        public Vector3 positionKick;
+        [Tooltip("连续射击允许累积到的最大旋转角度")]
+        public Vector3 maxRotation;
+        [Tooltip("连续射击允许累积到的最大位移")]
+        public Vector3 maxPosition;
+        [Min(0.01f)] public float kickSpeed;
+        [Min(0.01f)] public float returnSpeed;
+        [Range(0f, 1f)] public float immediateResponse;
+        [Range(0f, 0.1f)] public float sustainedBuildUpPerShot;
+    }
+
     [Tooltip("枪口（子弹生成点）")] public Transform bulletSpawnPoint;
     [Tooltip("枪口火花粒子")] public ParticleSystem muzzleFlash;
     [Tooltip("开火火花粒子")] public ParticleSystem sparkParticles;
+    [Tooltip("抛壳位置")]
+    public Transform casingSpawnPoint;
+    [Tooltip("每发抛出的弹壳预制体")]
+    public Transform casingPrefab;
 
     [Header("PVP 固定全息瞄具")]
     [Min(0.12f)]
@@ -26,23 +49,35 @@ public class FirstPersonViewmodel : MonoBehaviour
     public AudioClip aimInSound;
     [Range(0f, 1f)] public float aimInVolume = 1f;
 
-    [Header("PVP 瞄准开火视觉后坐力")]
-    [Tooltip("开镜开火时枪身每发向上旋转角度")]
-    public float pvpAdsWeaponPitchKick = 0.9f;
-    [Tooltip("开镜开火时枪身每发左右旋转角度")]
-    public float pvpAdsWeaponYawKick = 0.28f;
-    [Tooltip("开镜开火时枪身每发侧倾角度")]
-    public float pvpAdsWeaponRollKick = 0.7f;
-    [Tooltip("开镜开火时枪身每发向相机方向后坐的距离")]
-    public float pvpAdsWeaponBackKick = 0.008f;
-    [Tooltip("开镜开火时枪身每发向上跳动的距离")]
-    public float pvpAdsWeaponRiseKick = 0f;
-    [Tooltip("开镜开火时枪身每发左右位移的距离")]
-    public float pvpAdsWeaponSideKick = 0f;
-    [Tooltip("枪身后坐力进入速度")]
-    public float pvpAdsWeaponKickSpeed = 38f;
-    [Tooltip("枪身后坐力回正速度")]
-    public float pvpAdsWeaponReturnSpeed = 15f;
+    [Header("PVP 腰射开火手感")]
+    [Tooltip("腰射使用更明显的后移、抬枪和侧摆，模拟参考视频的重心冲击")]
+    public PvpShotFeel pvpHipFireFeel = new PvpShotFeel
+    {
+        rotationKick = new Vector3(2.35f, 0.65f, 1.4f),
+        rotationJitter = new Vector3(0.16f, 0.12f, 0.2f),
+        positionKick = new Vector3(0.006f, 0.004f, 0.022f),
+        maxRotation = new Vector3(6.5f, 2.8f, 5.5f),
+        maxPosition = new Vector3(0.025f, 0.016f, 0.07f),
+        kickSpeed = 52f,
+        returnSpeed = 16f,
+        immediateResponse = 0.72f,
+        sustainedBuildUpPerShot = 0.035f,
+    };
+
+    [Header("PVP 瞄准开火手感")]
+    [Tooltip("开镜时围绕全息准心做短促冲击；画面保持可读，枪身仍有清晰重量")]
+    public PvpShotFeel pvpAdsFireFeel = new PvpShotFeel
+    {
+        rotationKick = new Vector3(1.2f, 0.34f, 0.82f),
+        rotationJitter = new Vector3(0.09f, 0.06f, 0.12f),
+        positionKick = new Vector3(0.0015f, 0.001f, 0.012f),
+        maxRotation = new Vector3(3.4f, 1.5f, 6f),
+        maxPosition = new Vector3(0.009f, 0.006f, 0.04f),
+        kickSpeed = 48f,
+        returnSpeed = 18f,
+        immediateResponse = 0.68f,
+        sustainedBuildUpPerShot = 0.04f,
+    };
 
     private Animator animator;
     private int aimHash;
@@ -64,6 +99,7 @@ public class FirstPersonViewmodel : MonoBehaviour
     private Vector3 pvpWeaponRecoilCurrent;
     private Vector3 pvpWeaponPositionTarget;
     private Vector3 pvpWeaponPositionCurrent;
+    private bool pvpWeaponRecoilAiming;
     private Vector3 pvpRenderedAimDirectionLocal = Vector3.forward;
     private bool hasPvpRenderedAimDirection;
     private bool pvpWeaponRecoilPoseApplied;
@@ -179,15 +215,15 @@ public class FirstPersonViewmodel : MonoBehaviour
         hasPvpRenderedAimDirection = true;
     }
 
-    public bool TryGetPvpRenderedAimDirection(Transform cameraTransform, out Vector3 worldDirection)
+    public bool TryGetPvpRenderedAimDirection(Quaternion cameraRotation, out Vector3 worldDirection)
     {
-        if (cameraTransform != null && hasPvpRenderedAimDirection)
+        if (hasPvpRenderedAimDirection)
         {
-            worldDirection = cameraTransform.TransformDirection(pvpRenderedAimDirectionLocal).normalized;
+            worldDirection = (cameraRotation * pvpRenderedAimDirectionLocal).normalized;
             return true;
         }
 
-        worldDirection = cameraTransform != null ? cameraTransform.forward : Vector3.forward;
+        worldDirection = cameraRotation * Vector3.forward;
         return false;
     }
 
@@ -221,68 +257,95 @@ public class FirstPersonViewmodel : MonoBehaviour
     /// <summary>更新枪身后坐力的快速进入和较慢回正。</summary>
     public void UpdatePvpWeaponRecoil(float deltaTime)
     {
-        float returnT = 1f - Mathf.Exp(-Mathf.Max(0.01f, pvpAdsWeaponReturnSpeed) * deltaTime);
-        float kickT = 1f - Mathf.Exp(-Mathf.Max(0.01f, pvpAdsWeaponKickSpeed) * deltaTime);
+        PvpShotFeel feel = pvpWeaponRecoilAiming ? pvpAdsFireFeel : pvpHipFireFeel;
+        float returnT = 1f - Mathf.Exp(-Mathf.Max(0.01f, feel.returnSpeed) * deltaTime);
+        float kickT = 1f - Mathf.Exp(-Mathf.Max(0.01f, feel.kickSpeed) * deltaTime);
         pvpWeaponRecoilTarget = Vector3.Lerp(pvpWeaponRecoilTarget, Vector3.zero, returnT);
         pvpWeaponRecoilCurrent = Vector3.Lerp(pvpWeaponRecoilCurrent, pvpWeaponRecoilTarget, kickT);
         pvpWeaponPositionTarget = Vector3.Lerp(pvpWeaponPositionTarget, Vector3.zero, returnT);
         pvpWeaponPositionCurrent = Vector3.Lerp(pvpWeaponPositionCurrent, pvpWeaponPositionTarget, kickT);
     }
 
-    /// <summary>在每发开火时加入与镜头横向后坐同方向的枪身冲击。</summary>
-    public void AddPvpAdsShotRecoil(float horizontalDirection, float strength)
+    /// <summary>
+    /// 腰射与开镜共用的逐发视觉冲击。真实镜头后坐由 PlayerController 处理，
+    /// 这里仅驱动枪模，因此可以做出参考视频中更明显的后移、抬枪和持续侧倾。
+    /// </summary>
+    public void AddPvpShotRecoil(
+        bool isAiming,
+        float horizontalDirection,
+        float horizontalAmount,
+        int shotIndex)
     {
-        if (!pvpHolographicSightEnabled || !aiming)
+        if (!pvpHolographicSightEnabled)
             return;
 
-        float safeStrength = Mathf.Max(0.1f, strength);
+        pvpWeaponRecoilAiming = isAiming;
+        PvpShotFeel feel = isAiming ? pvpAdsFireFeel : pvpHipFireFeel;
         float side = Mathf.Abs(horizontalDirection) > 0.001f
             ? Mathf.Sign(horizontalDirection)
             : (Random.value < 0.5f ? -1f : 1f);
+        float sideWeight = Mathf.Lerp(0.78f, 1.18f, Mathf.Clamp01(horizontalAmount));
+        float sustainedStrength = 1f +
+            Mathf.Min(Mathf.Max(0, shotIndex), 16) * feel.sustainedBuildUpPerShot;
+
+        float pitchKick = Mathf.Max(
+            0f,
+            feel.rotationKick.x + Random.Range(-feel.rotationJitter.x, feel.rotationJitter.x));
+        float yawKick = side * feel.rotationKick.y * sideWeight +
+                        Random.Range(-feel.rotationJitter.y, feel.rotationJitter.y);
+        float rollKick = -side * feel.rotationKick.z * sideWeight +
+                         Random.Range(-feel.rotationJitter.z, feel.rotationJitter.z);
+        Vector3 rotationDelta = new Vector3(-pitchKick, yawKick, rollKick) * sustainedStrength;
+        pvpWeaponRecoilTarget += rotationDelta;
         pvpWeaponRecoilTarget.x = Mathf.Clamp(
-            pvpWeaponRecoilTarget.x - pvpAdsWeaponPitchKick * safeStrength,
-            -pvpAdsWeaponPitchKick * 2.75f,
+            pvpWeaponRecoilTarget.x,
+            -Mathf.Abs(feel.maxRotation.x),
             0f);
         pvpWeaponRecoilTarget.y = Mathf.Clamp(
-            pvpWeaponRecoilTarget.y + side * pvpAdsWeaponYawKick * safeStrength,
-            -pvpAdsWeaponYawKick * 2.75f,
-            pvpAdsWeaponYawKick * 2.75f);
+            pvpWeaponRecoilTarget.y,
+            -Mathf.Abs(feel.maxRotation.y),
+            Mathf.Abs(feel.maxRotation.y));
         pvpWeaponRecoilTarget.z = Mathf.Clamp(
-            pvpWeaponRecoilTarget.z - side * pvpAdsWeaponRollKick * safeStrength,
-            -pvpAdsWeaponRollKick * 2.75f,
-            pvpAdsWeaponRollKick * 2.75f);
+            pvpWeaponRecoilTarget.z,
+            -Mathf.Abs(feel.maxRotation.z),
+            Mathf.Abs(feel.maxRotation.z));
 
+        Vector3 positionDelta = new Vector3(
+            side * feel.positionKick.x * sideWeight,
+            feel.positionKick.y,
+            -Mathf.Abs(feel.positionKick.z)) * sustainedStrength;
+        pvpWeaponPositionTarget += positionDelta;
         pvpWeaponPositionTarget.x = Mathf.Clamp(
-            pvpWeaponPositionTarget.x + side * pvpAdsWeaponSideKick * safeStrength,
-            -pvpAdsWeaponSideKick * 2.75f,
-            pvpAdsWeaponSideKick * 2.75f);
+            pvpWeaponPositionTarget.x,
+            -Mathf.Abs(feel.maxPosition.x),
+            Mathf.Abs(feel.maxPosition.x));
         pvpWeaponPositionTarget.y = Mathf.Clamp(
-            pvpWeaponPositionTarget.y + pvpAdsWeaponRiseKick * safeStrength,
+            pvpWeaponPositionTarget.y,
             0f,
-            pvpAdsWeaponRiseKick * 2.75f);
+            Mathf.Abs(feel.maxPosition.y));
         pvpWeaponPositionTarget.z = Mathf.Clamp(
-            pvpWeaponPositionTarget.z - pvpAdsWeaponBackKick * safeStrength,
-            -pvpAdsWeaponBackKick * 2.75f,
+            pvpWeaponPositionTarget.z,
+            -Mathf.Abs(feel.maxPosition.z),
             0f);
 
         // 当帧立即响应，后续帧再由 UpdatePvpWeaponRecoil 平滑追随。
         pvpWeaponRecoilCurrent = Vector3.Lerp(
             pvpWeaponRecoilCurrent,
             pvpWeaponRecoilTarget,
-            0.55f);
+            feel.immediateResponse);
         pvpWeaponPositionCurrent = Vector3.Lerp(
             pvpWeaponPositionCurrent,
             pvpWeaponPositionTarget,
-            0.55f);
+            feel.immediateResponse);
     }
 
     /// <summary>
     /// 在 Animator 和全息瞄具基础对齐之后，让整把枪（包括镜框和红点）共同承受
     /// 旋转与位移冲击。这样不会再出现画面已经震动、瞄具却被钉死在屏幕中心的割裂感。
     /// </summary>
-    public void ApplyPvpWeaponRecoilPose(bool shouldApply)
+    public void ApplyPvpWeaponRecoilPose(bool shouldApply, bool shouldAim)
     {
-        if (!shouldApply || !CanAlignPvpHolographicSight ||
+        if (!shouldApply || !pvpHolographicSightEnabled ||
             (pvpWeaponRecoilCurrent.sqrMagnitude <= 0.000001f &&
              pvpWeaponPositionCurrent.sqrMagnitude <= 0.00000001f))
         {
@@ -291,15 +354,17 @@ public class FirstPersonViewmodel : MonoBehaviour
 
         pvpWeaponPreRecoilLocalPosition = transform.localPosition;
         pvpWeaponPreRecoilLocalRotation = transform.localRotation;
-        Vector3 aimPointBeforeRecoil = holographicAimPoint.position;
+        Vector3 aimPointBeforeRecoil = shouldAim && CanAlignPvpHolographicSight
+            ? holographicAimPoint.position
+            : Vector3.zero;
         transform.localPosition = pvpWeaponPreRecoilLocalPosition + pvpWeaponPositionCurrent;
         transform.localRotation = pvpWeaponPreRecoilLocalRotation *
                                   Quaternion.Euler(pvpWeaponRecoilCurrent);
 
         // 让枪身围绕瞄具中心承受后坐：保留旋转和前后冲击，只抵消会让红点
-        // 离开屏幕中心的横向、纵向位移。
+        // 离开屏幕中心的横向、纵向位移。腰射不做这层补偿，枪模可以完整摆动。
         Transform cameraParent = transform.parent;
-        if (cameraParent != null)
+        if (shouldAim && CanAlignPvpHolographicSight && cameraParent != null)
         {
             Vector3 beforeInCamera = cameraParent.InverseTransformPoint(aimPointBeforeRecoil);
             Vector3 afterInCamera = cameraParent.InverseTransformPoint(holographicAimPoint.position);
@@ -377,6 +442,7 @@ public class FirstPersonViewmodel : MonoBehaviour
         pvpWeaponRecoilCurrent = Vector3.zero;
         pvpWeaponPositionTarget = Vector3.zero;
         pvpWeaponPositionCurrent = Vector3.zero;
+        pvpWeaponRecoilAiming = aiming;
         hasPvpRenderedAimDirection = false;
     }
 
@@ -449,9 +515,9 @@ public class FirstPersonViewmodel : MonoBehaviour
     {
         if (animator != null)
         {
-            // Scope 2 的原始 Aim Fire 动画包含大幅左下位移，会破坏固定瞄准位置。
-            // PVP 开镜时保持 Aim Scope 2 姿态，后坐由镜头和瞄具中心枢轴共同表现。
-            if (!(aiming && pvpHolographicSightEnabled))
+            // PVP 腰射与开镜都由同一套程序化冲击驱动，避免旧 Fire/Aim Fire 动画
+            // 在两种姿势间出现节奏和位移断层。PVE 继续复用资源包原始动画。
+            if (!pvpHolographicSightEnabled)
             {
                 string stateName = aiming ? "Aim Fire" : "Fire";
                 animator.Play(stateName, 0, 0f);
@@ -461,6 +527,8 @@ public class FirstPersonViewmodel : MonoBehaviour
             muzzleFlash.Emit(1);
         if (sparkParticles != null)
             sparkParticles.Emit(1);
+        if (casingSpawnPoint != null && casingPrefab != null)
+            Instantiate(casingPrefab, casingSpawnPoint.position, casingSpawnPoint.rotation);
     }
 
     /// <summary>
@@ -495,6 +563,8 @@ public class FirstPersonViewmodel : MonoBehaviour
     public void SetAiming(bool aiming)
     {
         bool aimingChanged = this.aiming != aiming;
+        if (aimingChanged && pvpHolographicSightEnabled)
+            ResetPvpWeaponRecoil();
         this.aiming = aiming;
         if (animator != null)
         {

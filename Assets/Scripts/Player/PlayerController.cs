@@ -24,30 +24,39 @@ public class PlayerController : SingleMonoBase<PlayerController>
     #region 第一人称相关
     [Tooltip("第一人称手臂预制体（由菜单 联机 > 生成第一人称手臂预制体 生成）")]
     public GameObject viewmodelPrefab;
-    [Tooltip("腰射时手臂相对主相机的本地偏移")] public Vector3 viewmodelOffset = new Vector3(0f, -0.22f, 0.28f);
+    [Tooltip("腰射时手臂相对主相机的本地偏移")] public Vector3 viewmodelOffset = new Vector3(-0.02f, -0.1f, 0.04f);
     [Tooltip("开镜时的手臂偏移，单独保留以避免破坏准星对齐")] public Vector3 viewmodelAimOffset = new Vector3(0f, -0.12f, 0.35f);
     [Tooltip("腰射/开镜持枪位置过渡速度")] public float viewmodelOffsetLerpSpeed = 12f;
     [Tooltip("手臂整体缩放（模型尺寸不合时调整）")] public float viewmodelScale = 1f;
-    [Tooltip("眼睛高度（相对角色脚底）")] public float eyeHeight = 1.5f;
+    [Tooltip("眼睛高度（相对角色脚底）")] public float eyeHeight = 1.3f;
     [Tooltip("鼠标灵敏度")] public float mouseSensitivity = 0.1f;
-    [Tooltip("俯仰角下限")] public float pitchMin = -70f;
-    [Tooltip("俯仰角上限")] public float pitchMax = 70f;
+    [Tooltip("俯仰角下限")] public float pitchMin = -75f;
+    [Tooltip("俯仰角上限")] public float pitchMax = 75f;
     [Tooltip("默认视野")] public float defaultFov = 60f;
     [Tooltip("瞄准视野")] public float aimFov = 40f;
-    [Tooltip("视野过渡速度")] public float fovLerpSpeed = 10f;
+    [Tooltip("视野过渡速度")] public float fovLerpSpeed = 12f;
 
     #region 开火后坐力相关
     [Header("开火后坐力")]
-    [Tooltip("每发向上抬起的角度")] public float recoilPitchPerShot = 1.2f;
-    [Tooltip("每发水平随机偏移的最大角度")] public float recoilYawPerShot = 0.3f;
-    [Tooltip("连续射击最大上抬角度")] public float recoilMaxPitch = 8f;
-    [Tooltip("连续射击最大水平偏移角度")] public float recoilMaxYaw = 2f;
-    [Tooltip("后坐力踢起速度")] public float recoilKickSpeed = 24f;
-    [Tooltip("后坐力回正速度")] public float recoilReturnSpeed = 9f;
+    [Tooltip("每发向上抬起的角度")]
+    public float recoilPitchPerShot = 0.9f;
+    [Tooltip("每发水平弹道偏移角度")]
+    public float recoilYawPerShot = 0.75f;
+    [Tooltip("连续射击最大上抬角度")]
+    public float recoilMaxPitch = 10.5f;
+    [Tooltip("连续射击最大水平偏移角度")]
+    public float recoilMaxYaw = 4.4f;
+    [Tooltip("真实准心后坐力踢起速度")]
+    public float recoilKickSpeed = 30f;
+    [Tooltip("停火后的真实准心回正速度")]
+    public float recoilReturnSpeed = 7.5f;
     [Range(0.1f, 1f)]
-    [Tooltip("开镜时的后坐力倍率")] public float aimingRecoilMultiplier = 0.65f;
-    [Tooltip("停火后多久开始回正")] public float recoilRecoveryDelay = 0.12f;
-    [Tooltip("停火多久后重置为弹道第一发")] public float recoilPatternResetDelay = 0.35f;
+    [Tooltip("开镜时的真实准心后坐力倍率")]
+    public float aimingRecoilMultiplier = 0.82f;
+    [Tooltip("停火后多久开始回正")]
+    public float recoilRecoveryDelay = 0.08f;
+    [Tooltip("停火多久后重置为弹道第一发")]
+    public float recoilPatternResetDelay = 0.3f;
     [Tooltip("固定后坐力弹道：X 为左右，Y 为向上")]
     public Vector2[] recoilPattern =
     {
@@ -62,23 +71,23 @@ public class PlayerController : SingleMonoBase<PlayerController>
 
     [Header("PVP 射击手感")]
     [Tooltip("PVP 垂直后坐力倍率")]
-    public float pvpVerticalRecoilMultiplier = 1.35f;
+    public float pvpVerticalRecoilMultiplier = 1.5f;
     [Tooltip("PVP 水平弹道倍率；用于让连续射击出现清晰的左右摆动")]
-    public float pvpHorizontalRecoilMultiplier = 2f;
+    public float pvpHorizontalRecoilMultiplier = 1.85f;
     [Tooltip("PVP 开镜时在原 aimingRecoilMultiplier 基础上的补偿倍率")]
-    public float pvpAimingRecoilMultiplier = 1.35f;
+    public float pvpAimingRecoilMultiplier = 0.75f;
     [Tooltip("每发附加的轻微随机水平冲击角度，不影响准心与落点一致性")]
-    public float pvpHorizontalJitter = 0.05f;
+    public float pvpHorizontalJitter = 0.03f;
     [Tooltip("每发瞬时镜头上跳角度")]
-    public float pvpCameraImpulsePitch = 0.65f;
+    public float pvpCameraImpulsePitch = 0.32f;
     [Tooltip("每发瞬时镜头左右冲击角度")]
-    public float pvpCameraImpulseYaw = 0.16f;
+    public float pvpCameraImpulseYaw = 0.08f;
     [Tooltip("每发瞬时镜头侧倾角度")]
-    public float pvpCameraImpulseRoll = 0.28f;
+    public float pvpCameraImpulseRoll = 0.16f;
     [Tooltip("每发镜头向后位移距离")]
-    public float pvpCameraKickback = 0.018f;
+    public float pvpCameraKickback = 0.012f;
     [Tooltip("瞬时镜头冲击恢复速度")]
-    public float pvpCameraImpulseReturnSpeed = 20f;
+    public float pvpCameraImpulseReturnSpeed = 24f;
     #endregion
     
 
@@ -273,26 +282,20 @@ public class PlayerController : SingleMonoBase<PlayerController>
             return;
 
         // 相机跟随角色眼睛。持续后坐力负责弹道爬升，瞬时冲击负责每发的震动、侧倾与后移。
-        Vector3 eyePosition = currentPlayerModel.transform.position + Vector3.up * eyeHeight;
-        float recoilPitch = Mathf.Clamp(
-            pitch - recoilCurrent.y - cameraRecoilImpulse.x,
-            pitchMin,
-            pitchMax);
-        Quaternion cameraRotation = Quaternion.Euler(
-            recoilPitch,
-            yaw + recoilCurrent.x + cameraRecoilImpulse.y,
-            cameraRecoilImpulse.z);
+        Vector3 eyePosition = GetCurrentEyePosition();
+        Quaternion cameraRotation = GetCurrentCameraRotation();
         mainCamera.transform.rotation = cameraRotation;
         mainCamera.transform.position = eyePosition + cameraRotation * (Vector3.back * cameraKickbackImpulse);
 
         // Animator 已计算完本帧姿势：先完成静态开镜对齐，再让镜框、红点和整枪一起承受后坐。
         if (viewmodel != null)
         {
-            viewmodel.UpdateHolographicAlignment(mainCamera.transform, isAiming && IsCurrentPlayerPvp());
-            viewmodel.ApplyPvpWeaponRecoilPose(isAiming && IsCurrentPlayerPvp());
+            bool isPvp = IsCurrentPlayerPvp();
+            viewmodel.UpdateHolographicAlignment(mainCamera.transform, isAiming && isPvp);
+            viewmodel.ApplyPvpWeaponRecoilPose(isPvp, isAiming);
             viewmodel.CapturePvpRenderedAimDirection(
                 mainCamera.transform,
-                isAiming && IsCurrentPlayerPvp());
+                isAiming && isPvp);
         }
 
         // PVP 固定全息瞄具按 1.5x 计算 FOV；PVE 继续使用原有 aimFov。
@@ -301,6 +304,29 @@ public class PlayerController : SingleMonoBase<PlayerController>
             : aimFov;
         float targetFov = isAiming ? activeAimFov : defaultFov;
         mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFov, fovLerpSpeed * Time.deltaTime);
+    }
+
+    private Vector3 GetCurrentEyePosition()
+    {
+        return currentPlayerModel != null
+            ? currentPlayerModel.transform.position + Vector3.up * eyeHeight
+            : (mainCamera != null ? mainCamera.transform.position : transform.position);
+    }
+
+    /// <summary>
+    /// 使用本帧已经读取到的鼠标输入和后坐状态直接计算视角。
+    /// 开火在 Update 发生，不能依赖上一帧 LateUpdate 才写入的 Camera.transform。
+    /// </summary>
+    private Quaternion GetCurrentCameraRotation()
+    {
+        float recoilPitch = Mathf.Clamp(
+            pitch - recoilCurrent.y - cameraRecoilImpulse.x,
+            pitchMin,
+            pitchMax);
+        return Quaternion.Euler(
+            recoilPitch,
+            yaw + recoilCurrent.x + cameraRecoilImpulse.y,
+            cameraRecoilImpulse.z);
     }
 
     /// <summary>
@@ -441,6 +467,17 @@ public class PlayerController : SingleMonoBase<PlayerController>
     {
         get
         {
+            if (viewmodel != null && viewmodel.bulletSpawnPoint != null && mainCamera != null)
+            {
+                // Viewmodel 是相机子节点：保留 Animator 算出的本地枪口姿势，再套用本帧
+                // 鼠标/后坐视角，避免快速甩枪时曳光起点也落后一帧。
+                Vector3 localMuzzle = mainCamera.transform.InverseTransformPoint(
+                    viewmodel.bulletSpawnPoint.position);
+                Quaternion currentRotation = GetCurrentCameraRotation();
+                Vector3 currentCameraPosition = GetCurrentEyePosition() +
+                    currentRotation * (Vector3.back * cameraKickbackImpulse);
+                return currentCameraPosition + currentRotation * localMuzzle;
+            }
             if (viewmodel != null && viewmodel.bulletSpawnPoint != null)
                 return viewmodel.bulletSpawnPoint.position;
             return mainCamera != null ? mainCamera.transform.position : transform.position;
@@ -453,7 +490,9 @@ public class PlayerController : SingleMonoBase<PlayerController>
         if (mainCamera == null)
             return transform.forward;
 
-        Ray centerRay = new Ray(mainCamera.transform.position, mainCamera.transform.forward);
+        Ray centerRay = new Ray(
+            GetCurrentEyePosition(),
+            GetCurrentCameraRotation() * Vector3.forward);
         Vector3 targetPoint = centerRay.origin + centerRay.direction * maxRayDistance;
         float nearestDistance = maxRayDistance;
 
@@ -526,12 +565,13 @@ public class PlayerController : SingleMonoBase<PlayerController>
 
         Vector3 visualOrigin = FireOrigin;
         bool usePvpAimRay = mainCamera != null && IsCurrentPlayerPvp();
-        Vector3 hitOrigin = usePvpAimRay ? mainCamera.transform.position : visualOrigin;
+        Quaternion shotRotation = GetCurrentCameraRotation();
+        Vector3 hitOrigin = usePvpAimRay ? GetCurrentEyePosition() : visualOrigin;
         Vector3 hitDirection = usePvpAimRay
-            ? mainCamera.transform.forward
+            ? shotRotation * Vector3.forward
             : GetFireDirection(visualOrigin);
         if (usePvpAimRay && isAiming && viewmodel != null)
-            viewmodel.TryGetPvpRenderedAimDirection(mainCamera.transform, out hitDirection);
+            viewmodel.TryGetPvpRenderedAimDirection(shotRotation, out hitDirection);
         bool grounded = currentPlayerModel.cc != null && currentPlayerModel.cc.isGrounded;
         bool moving = moveInput.sqrMagnitude > 0.0001f;
         // PVP 采用“准心即落点”：腰射走屏幕准心，开镜走实际渲染出的全息红点方向，
@@ -756,7 +796,15 @@ public class PlayerController : SingleMonoBase<PlayerController>
                 cameraKickbackImpulse + pvpCameraKickback * multiplier,
                 pvpCameraKickback * 2f);
             if (viewmodel != null)
-                viewmodel.AddPvpAdsShotRecoil(side, multiplier);
+            {
+                float horizontalAmount = Mathf.Clamp01(
+                    Mathf.Abs(horizontalDelta) / Mathf.Max(0.01f, recoilYawPerShot));
+                viewmodel.AddPvpShotRecoil(
+                    isAiming,
+                    side,
+                    horizontalAmount,
+                    recoilShotIndex);
+            }
         }
         recoilShotIndex++;
         lastRecoilShotTime = Time.time;

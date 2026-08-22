@@ -2232,6 +2232,7 @@ RectTransform:
   - {fileID: 1154095980}
   - {fileID: 168371715}
   - {fileID: 3193854768027192916}
+  - {fileID: 1205944052}
   m_Father: {fileID: 2071931270}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -3594,7 +3595,7 @@ MonoBehaviour:
   dedicatedServerPort: 7777
   dedicatedServerRoomCount: 5
   discovery: {fileID: 638794295}
-  playerName: 
+  playerName: "\u9B4F\u8FB0\u5E74"
   playerPrefabResourcePaths:
   - Players/Lumine_Net
   - Players/Furina_Net
@@ -6758,11 +6759,11 @@ RectTransform:
   m_Children:
   - {fileID: 1169768628}
   - {fileID: 122667953}
-  m_Father: {fileID: 3285283978572740827}
+  m_Father: {fileID: 336627095}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: -523.9998, y: 673.5145}
+  m_AnchoredPosition: {x: 108, y: -55}
   m_SizeDelta: {x: 150, y: 50.2966}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1205944053
@@ -15038,8 +15039,7 @@ RectTransform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 1205944052}
+  m_Children: []
   m_Father: {fileID: 3193854768027192916}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 0.5}

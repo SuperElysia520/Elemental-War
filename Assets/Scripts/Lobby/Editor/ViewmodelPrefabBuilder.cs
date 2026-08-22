@@ -80,6 +80,10 @@ public static class ViewmodelPrefabBuilder
         if (muzzle != null) vm.muzzleFlash = muzzle.GetComponent<ParticleSystem>();
         var spark = FindRecursive(copy.transform, "SparkParticles");
         if (spark != null) vm.sparkParticles = spark.GetComponent<ParticleSystem>();
+        vm.casingSpawnPoint = FindRecursive(copy.transform, "Casing Spawn Point");
+        GameObject casingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(
+            "Assets/Plugins/Low Poly FPS Pack/Prefabs/Example_Prefabs/Casing_Prefabs/Big_Casing_Prefab.prefab");
+        if (casingPrefab != null) vm.casingPrefab = casingPrefab.transform;
         vm.pvpHolographicReticle = AssetDatabase.LoadAssetAtPath<Sprite>(
             "Assets/Plugins/Low Poly FPS Pack/Components/Textures_&_Sprites/Scope_Textures/Red_Dot_Sight_2_Texture.png");
         vm.aimInSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Resource/Audio/aim_in.mp3");
