@@ -68,16 +68,19 @@ public class FirstPersonViewmodel : MonoBehaviour
     [Tooltip("开镜时围绕全息准心做短促冲击；画面保持可读，枪身仍有清晰重量")]
     public PvpShotFeel pvpAdsFireFeel = new PvpShotFeel
     {
-        rotationKick = new Vector3(1.2f, 0.34f, 0.82f),
-        rotationJitter = new Vector3(0.09f, 0.06f, 0.12f),
-        positionKick = new Vector3(0.0015f, 0.001f, 0.012f),
-        maxRotation = new Vector3(3.4f, 1.5f, 6f),
-        maxPosition = new Vector3(0.009f, 0.006f, 0.04f),
-        kickSpeed = 48f,
-        returnSpeed = 18f,
-        immediateResponse = 0.68f,
-        sustainedBuildUpPerShot = 0.04f,
+        rotationKick = new Vector3(1.35f, 0.43f, 1f),
+        rotationJitter = new Vector3(0.13f, 0.1f, 0.16f),
+        positionKick = new Vector3(0.0022f, 0.0017f, 0.0135f),
+        maxRotation = new Vector3(5f, 2f, 6f),
+        maxPosition = new Vector3(0.01f, 0.015f, 0.05f),
+        kickSpeed = 100f,
+        returnSpeed = 5.5f,
+        immediateResponse = 0.74f,
+        sustainedBuildUpPerShot = 0.045f,
     };
+    [Range(0f, 1f)]
+    [Tooltip("ADS 对红点横纵位移的稳定比例：1=完全固定，0=完全跟随枪身。本项目建议保留部分晃动。")]
+    public float pvpAdsReticleStabilization = 1f;
 
     private Animator animator;
     private int aimHash;
@@ -368,10 +371,12 @@ public class FirstPersonViewmodel : MonoBehaviour
         {
             Vector3 beforeInCamera = cameraParent.InverseTransformPoint(aimPointBeforeRecoil);
             Vector3 afterInCamera = cameraParent.InverseTransformPoint(holographicAimPoint.position);
-            transform.localPosition += new Vector3(
+            Vector3 reticleCorrection = new Vector3(
                 beforeInCamera.x - afterInCamera.x,
                 beforeInCamera.y - afterInCamera.y,
                 0f);
+            transform.localPosition += reticleCorrection *
+                                       Mathf.Clamp01(pvpAdsReticleStabilization);
         }
         pvpWeaponRecoilPoseApplied = true;
     }
@@ -572,11 +577,22 @@ public class FirstPersonViewmodel : MonoBehaviour
             animator.SetBool(aimScope2Hash, aiming && pvpHolographicSightEnabled);
         }
         if (aimingChanged)
-        {
             ApplyAttachmentVisibility();
-            if (aiming && pvpHolographicSightEnabled && aimInSound != null && aimAudioSource != null)
-                aimAudioSource.PlayOneShot(aimInSound, aimInVolume);
-        }
+    }
+
+    /// <summary>
+    /// 只由真实的瞄准按键按下沿调用。状态机切换不得直接播放，避免 Hover/Aiming 过渡叠音。
+    /// </summary>
+    public void PlayAimInSound()
+    {
+        if (!pvpHolographicSightEnabled || aimInSound == null || aimAudioSource == null)
+            return;
+
+        // 快速重复按键时用新声音替换旧声音，不允许多个尖锐瞬态叠加。
+        aimAudioSource.Stop();
+        aimAudioSource.clip = aimInSound;
+        aimAudioSource.volume = aimInVolume;
+        aimAudioSource.Play();
     }
 
     public void SetMoving(bool moving)

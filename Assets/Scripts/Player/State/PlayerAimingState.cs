@@ -34,12 +34,12 @@ public class PlayerAimingState : PlayerStateBase
 
     public override void Update()
     {
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Aiming)
             return;
 
         base.Update();
 
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Aiming)
             return;
 
         if (IsBeControl())

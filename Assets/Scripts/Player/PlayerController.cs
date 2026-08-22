@@ -36,6 +36,28 @@ public class PlayerController : SingleMonoBase<PlayerController>
     [Tooltip("瞄准视野")] public float aimFov = 40f;
     [Tooltip("视野过渡速度")] public float fovLerpSpeed = 12f;
 
+    #region 本地移动音效
+    [Header("本地移动音效")]
+    [Tooltip("正常移动时循环播放的脚步音")]
+    public AudioClip walkingLoopSound;
+    [Tooltip("冲刺时循环播放的脚步音")]
+    public AudioClip runningLoopSound;
+    [Tooltip("有效起跳时播放的音效")]
+    public AudioClip jumpSound;
+    [Tooltip("落地时播放的音效")]
+    public AudioClip landingSound;
+    [Range(0f, 1f)] public float walkingVolume = 0.28f;
+    [Range(0f, 1f)] public float runningVolume = 0.38f;
+    [Range(0f, 1f)] public float jumpVolume = 0.35f;
+    [Range(0f, 1f)] public float landingVolume = 0.5f;
+    [Min(0.01f)]
+    [Tooltip("步行/奔跑循环音之间的淡入淡出速度")]
+    public float movementLoopFadeSpeed = 6f;
+    [Min(0f)]
+    [Tooltip("至少滞空这么久才播放落地声，过滤斜坡和台阶误触")]
+    public float minimumLandingAirTime = 0.12f;
+    #endregion
+
     #region 开火后坐力相关
     [Header("开火后坐力")]
     [Tooltip("每发向上抬起的角度")]
@@ -76,6 +98,9 @@ public class PlayerController : SingleMonoBase<PlayerController>
     public float pvpHorizontalRecoilMultiplier = 1.85f;
     [Tooltip("PVP 开镜时在原 aimingRecoilMultiplier 基础上的补偿倍率")]
     public float pvpAimingRecoilMultiplier = 0.75f;
+    [Range(1f, 3f)]
+    [Tooltip("只放大开镜时每发的瞬时镜头冲击，不改变持续爬升弹道")]
+    public float pvpAimingCameraImpulseMultiplier = 1f;
     [Tooltip("每发附加的轻微随机水平冲击角度，不影响准心与落点一致性")]
     public float pvpHorizontalJitter = 0.03f;
     [Tooltip("每发瞬时镜头上跳角度")]
@@ -110,6 +135,12 @@ public class PlayerController : SingleMonoBase<PlayerController>
     private GameObject pvpCrosshairPoint;
     private bool pvpCrosshairInitialActive;
     private bool pvpCrosshairPointInitialActive;
+    private AudioSource walkingAudioSource;
+    private AudioSource runningAudioSource;
+    private AudioSource movementOneShotSource;
+    private bool movementAudioWasGrounded;
+    private float movementAudioAirborneTime;
+    private float movementAudioLowestVerticalSpeed;
     #endregion
 
     #region 玩家输入相关
@@ -171,6 +202,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
             yaw = currentPlayerModel.transform.eulerAngles.y;
         pitch = 0f;
 
+        SetupMovementAudio();
         ExitAim();
         SetupLocalView();
     }
@@ -188,11 +220,14 @@ public class PlayerController : SingleMonoBase<PlayerController>
             TryReload();
         bool weaponReloading = currentWeapon != null && currentWeapon.IsReloading;
         bool sprintPressed = input.Player.IsSprint.IsPressed();
+        bool aimPressedThisFrame = input.Player.IsAiming.WasPressedThisFrame();
         isAiming = input.Player.IsAiming.IsPressed() && !weaponReloading;
         isJumping = input.Player.IsJumping.triggered;
         isFire = input.Player.Fire.IsPressed() && !weaponReloading;
         // CS 式射击不允许边奔跑边保持冲刺：开镜/开火会终止冲刺，且只允许向前冲刺。
         isSprint = sprintPressed && moveInput.y > 0.1f && !isAiming && !isFire && !weaponReloading;
+        if (isJumping && currentPlayerModel.cc != null && currentPlayerModel.cc.isGrounded)
+            PlayMovementOneShot(jumpSound, jumpVolume, 1.02f);
         #endregion
 
         #region 视角（鼠标 delta）
@@ -245,6 +280,8 @@ public class PlayerController : SingleMonoBase<PlayerController>
                 offsetT);
             // Aim 只由右键决定，左键腰射不改变开镜参数。
             viewmodel.SetAiming(isAiming);
+            if (aimPressedThisFrame && isAiming)
+                viewmodel.PlayAimInSound();
             viewmodel.SetMoving(moving && !isSprint && !weaponReloading);
             viewmodel.SetRunning(moving && isSprint && !weaponReloading);
             UpdatePvpCrosshairVisibility();
@@ -304,6 +341,150 @@ public class PlayerController : SingleMonoBase<PlayerController>
             : aimFov;
         float targetFov = isAiming ? activeAimFov : defaultFov;
         mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFov, fovLerpSpeed * Time.deltaTime);
+
+        UpdateMovementAudio();
+    }
+
+    private void SetupMovementAudio()
+    {
+        if (walkingAudioSource == null)
+            walkingAudioSource = CreateMovementAudioSource(true);
+        if (runningAudioSource == null)
+            runningAudioSource = CreateMovementAudioSource(true);
+        if (movementOneShotSource == null)
+            movementOneShotSource = CreateMovementAudioSource(false);
+
+        ResetMovementAudioState();
+    }
+
+    private AudioSource CreateMovementAudioSource(bool loop)
+    {
+        AudioSource source = gameObject.AddComponent<AudioSource>();
+        source.playOnAwake = false;
+        source.loop = loop;
+        source.spatialBlend = 0f;
+        source.dopplerLevel = 0f;
+        return source;
+    }
+
+    private void UpdateMovementAudio()
+    {
+        if (walkingAudioSource == null || runningAudioSource == null)
+            return;
+
+        if (currentPlayerModel == null || currentPlayerModel.cc == null)
+        {
+            UpdateMovementLoop(walkingAudioSource, walkingLoopSound, 0f, 1f);
+            UpdateMovementLoop(runningAudioSource, runningLoopSound, 0f, 1.03f);
+            return;
+        }
+
+        CharacterController controller = currentPlayerModel.cc;
+        bool grounded = controller.isGrounded;
+        Vector3 horizontalVelocity = controller.velocity;
+        horizontalVelocity.y = 0f;
+        bool movingOnGround = grounded && horizontalVelocity.sqrMagnitude > 0.04f;
+
+        float walkingTarget = movingOnGround && !isSprint ? walkingVolume : 0f;
+        float runningTarget = movingOnGround && isSprint ? runningVolume : 0f;
+        UpdateMovementLoop(walkingAudioSource, walkingLoopSound, walkingTarget, 1f);
+        UpdateMovementLoop(runningAudioSource, runningLoopSound, runningTarget, 1.03f);
+
+        if (!grounded)
+        {
+            if (movementAudioWasGrounded)
+            {
+                movementAudioAirborneTime = 0f;
+                movementAudioLowestVerticalSpeed = 0f;
+            }
+
+            movementAudioAirborneTime += Time.deltaTime;
+            movementAudioLowestVerticalSpeed = Mathf.Min(
+                movementAudioLowestVerticalSpeed,
+                currentPlayerModel.verticalSpeed);
+        }
+        else if (!movementAudioWasGrounded)
+        {
+            if (movementAudioAirborneTime >= minimumLandingAirTime)
+            {
+                float impactSpeed = Mathf.Abs(Mathf.Min(0f, movementAudioLowestVerticalSpeed));
+                float impactVolume = Mathf.Lerp(0.7f, 1f, Mathf.InverseLerp(2f, 10f, impactSpeed));
+                PlayMovementOneShot(
+                    landingSound,
+                    landingVolume * impactVolume,
+                    Random.Range(0.96f, 1.02f));
+            }
+
+            movementAudioAirborneTime = 0f;
+            movementAudioLowestVerticalSpeed = 0f;
+        }
+
+        movementAudioWasGrounded = grounded;
+    }
+
+    private void UpdateMovementLoop(
+        AudioSource source,
+        AudioClip clip,
+        float targetVolume,
+        float pitchMultiplier)
+    {
+        if (source == null)
+            return;
+
+        if (clip == null)
+            targetVolume = 0f;
+        else if (source.clip != clip)
+        {
+            source.Stop();
+            source.clip = clip;
+            source.volume = 0f;
+        }
+
+        source.pitch = pitchMultiplier;
+        source.volume = Mathf.MoveTowards(
+            source.volume,
+            targetVolume,
+            movementLoopFadeSpeed * Time.deltaTime);
+
+        if (targetVolume > 0f && clip != null && !source.isPlaying)
+            source.Play();
+        else if (targetVolume <= 0f && source.volume <= 0.0001f && source.isPlaying)
+            source.Stop();
+    }
+
+    private void PlayMovementOneShot(AudioClip clip, float volume, float pitchMultiplier)
+    {
+        if (clip == null || movementOneShotSource == null || volume <= 0f)
+            return;
+
+        movementOneShotSource.pitch = pitchMultiplier;
+        movementOneShotSource.PlayOneShot(clip, Mathf.Clamp01(volume));
+    }
+
+    private void ResetMovementAudioState()
+    {
+        StopMovementAudio();
+        movementAudioWasGrounded = currentPlayerModel != null &&
+                                   currentPlayerModel.cc != null &&
+                                   currentPlayerModel.cc.isGrounded;
+        movementAudioAirborneTime = 0f;
+        movementAudioLowestVerticalSpeed = 0f;
+    }
+
+    private void StopMovementAudio()
+    {
+        if (walkingAudioSource != null)
+        {
+            walkingAudioSource.Stop();
+            walkingAudioSource.volume = 0f;
+        }
+        if (runningAudioSource != null)
+        {
+            runningAudioSource.Stop();
+            runningAudioSource.volume = 0f;
+        }
+        if (movementOneShotSource != null)
+            movementOneShotSource.Stop();
     }
 
     private Vector3 GetCurrentEyePosition()
@@ -350,8 +531,6 @@ public class PlayerController : SingleMonoBase<PlayerController>
     {
         if (currentPlayerModel != null)
             currentPlayerModel.EnterAim();
-        if (viewmodel != null)
-            viewmodel.SetAiming(true);
     }
 
     /// <summary>
@@ -361,8 +540,6 @@ public class PlayerController : SingleMonoBase<PlayerController>
     {
         if (currentPlayerModel != null)
             currentPlayerModel.ExitAim();
-        if (viewmodel != null)
-            viewmodel.SetAiming(false);
     }
 
     /// <summary>
@@ -415,6 +592,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
             viewmodel.ConfigurePvpHolographicSight(IsCurrentPlayerPvp());
         ResolvePvpCrosshair();
         UpdatePvpCrosshairVisibility();
+        ResetMovementAudioState();
     }
 
     private bool IsCurrentPlayerPvp()
@@ -781,19 +959,23 @@ public class PlayerController : SingleMonoBase<PlayerController>
 
         if (usePvpRecoil)
         {
+            float cameraImpulseMultiplier = multiplier *
+                (isAiming ? pvpAimingCameraImpulseMultiplier : 1f);
             float side = Mathf.Abs(horizontalDelta) > 0.001f
                 ? Mathf.Sign(horizontalDelta)
                 : (Random.value < 0.5f ? -1f : 1f);
             cameraRecoilImpulse.x = Mathf.Min(
-                cameraRecoilImpulse.x + pvpCameraImpulsePitch * multiplier,
+                cameraRecoilImpulse.x + pvpCameraImpulsePitch * cameraImpulseMultiplier,
                 pvpCameraImpulsePitch * 2.25f);
             cameraRecoilImpulse.y = Mathf.Clamp(
-                horizontalDelta * 0.3f + Random.Range(-pvpCameraImpulseYaw, pvpCameraImpulseYaw),
+                horizontalDelta * 0.3f +
+                    Random.Range(-pvpCameraImpulseYaw, pvpCameraImpulseYaw) * cameraImpulseMultiplier,
                 -pvpCameraImpulseYaw * 1.5f,
                 pvpCameraImpulseYaw * 1.5f);
-            cameraRecoilImpulse.z = -side * pvpCameraImpulseRoll * multiplier;
+            cameraRecoilImpulse.z =
+                -side * pvpCameraImpulseRoll * cameraImpulseMultiplier;
             cameraKickbackImpulse = Mathf.Min(
-                cameraKickbackImpulse + pvpCameraKickback * multiplier,
+                cameraKickbackImpulse + pvpCameraKickback * cameraImpulseMultiplier,
                 pvpCameraKickback * 2f);
             if (viewmodel != null)
             {
@@ -827,6 +1009,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
     private void OnDisable()
     {
         CancelQueuedAutoReload();
+        StopMovementAudio();
         input.Disable();
         if (pvpCrosshair != null)
             pvpCrosshair.SetActive(pvpCrosshairInitialActive);

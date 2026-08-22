@@ -24816,6 +24816,16 @@ MonoBehaviour:
   defaultFov: 60
   aimFov: 40
   fovLerpSpeed: 12
+  walkingLoopSound: {fileID: 8300000, guid: 5ac86ac5747770349a6c124f36d233e1, type: 3}
+  runningLoopSound: {fileID: 8300000, guid: 8a49c532c25ef274781a01f02cd8b425, type: 3}
+  jumpSound: {fileID: 8300000, guid: 99d11e390b291d24f95279e3d862197e, type: 3}
+  landingSound: {fileID: 8300000, guid: 89b4957f2e6ee4740adfdccd422b9262, type: 3}
+  walkingVolume: 0.32
+  runningVolume: 0.48
+  jumpVolume: 0.5
+  landingVolume: 0.6
+  movementLoopFadeSpeed: 6
+  minimumLandingAirTime: 0.12
   recoilPitchPerShot: 0.9
   recoilYawPerShot: 0.75
   recoilMaxPitch: 10.5
@@ -24849,6 +24859,7 @@ MonoBehaviour:
   pvpVerticalRecoilMultiplier: 1.5
   pvpHorizontalRecoilMultiplier: 1.85
   pvpAimingRecoilMultiplier: 0.75
+  pvpAimingCameraImpulseMultiplier: 1
   pvpHorizontalJitter: 0.03
   pvpCameraImpulsePitch: 0.32
   pvpCameraImpulseYaw: 0.08

@@ -18,14 +18,29 @@ public class PlayerHoverState : PlayerStateBase
         if (!CanUpdate)
             return;
 
+        // 落地优先结算，避免基类先进入 Aiming、随后又被 Hover 强制切回 Idle。
+        if (playerModel.cc.isGrounded)
+        {
+            playerModel.verticalSpeed = playerModel.gravity * Time.deltaTime;
+            if (IsBeControl())
+            {
+                if (playerController.isAiming)
+                    playerModel.SwitchState(PlayerState.Aiming);
+                else if (playerController.moveInput.sqrMagnitude > 0.0001f)
+                    playerModel.SwitchState(PlayerState.Move);
+                else
+                    playerModel.SwitchState(PlayerState.Idle);
+            }
+            else
+            {
+                playerModel.SwitchState(PlayerState.Idle);
+            }
+            return;
+        }
+
         base.Update();
 
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Hover)
             return;
-
-        #region 检测角色是否落在地面上
-        if (playerModel.cc.isGrounded)
-            playerModel.SwitchState(PlayerState.Idle);
-        #endregion
     }
 }

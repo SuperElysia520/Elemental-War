@@ -31728,7 +31728,7 @@ MonoBehaviour:
   pvpHolographicAimSmoothTime: 0.15
   pvpHolographicReticle: {fileID: 21300000, guid: d12f9350e2b99b041b28f8714a37b6ef,
     type: 3}
-  aimInSound: {fileID: 8300000, guid: 69ba206bce6297342a2c411b302365c7, type: 3}
+  aimInSound: {fileID: 8300000, guid: 290ed4bef4d37a4438dbdba9a35d4c9a, type: 3}
   aimInVolume: 1
   pvpHipFireFeel:
     rotationKick: {x: 2.35, y: 0.65, z: 1.4}
@@ -31741,15 +31741,16 @@ MonoBehaviour:
     immediateResponse: 0.72
     sustainedBuildUpPerShot: 0.035
   pvpAdsFireFeel:
-    rotationKick: {x: 1.2, y: 0.34, z: 0.82}
-    rotationJitter: {x: 0.09, y: 0.06, z: 0.12}
-    positionKick: {x: 0.0015, y: 0.001, z: 0.012}
+    rotationKick: {x: 1.35, y: 0.43, z: 1}
+    rotationJitter: {x: 0.13, y: 0.1, z: 0.16}
+    positionKick: {x: 0.0022, y: 0.0017, z: 0.0135}
     maxRotation: {x: 5, y: 2, z: 6}
     maxPosition: {x: 0.01, y: 0.015, z: 0.05}
     kickSpeed: 100
-    returnSpeed: 1
-    immediateResponse: 0.68
-    sustainedBuildUpPerShot: 0.04
+    returnSpeed: 5.5
+    immediateResponse: 0.74
+    sustainedBuildUpPerShot: 0.045
+  pvpAdsReticleStabilization: 1
 --- !u!1 &6036861880301615478
 GameObject:
   m_ObjectHideFlags: 0
