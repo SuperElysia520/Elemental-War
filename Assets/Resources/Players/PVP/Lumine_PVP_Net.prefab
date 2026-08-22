@@ -134,7 +134,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  GlobalObjectIdHash: 3718139846
+  GlobalObjectIdHash: 661454044
   InScenePlacedSourceGlobalObjectIdHash: 0
   AlwaysReplicateAsRoot: 0
   SynchronizeTransform: 1
@@ -203,8 +203,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   maxHealth: 100
   respawnDelay: 3
-  bodyBloodImpactPrefab: {fileID: 1041181722733882, guid: 46cb51842826d77438ecf64a2ff442ae, type: 3}
-  headBloodImpactPrefab: {fileID: 1855497614338780, guid: 0e62d5b045839404282de40af048cf14, type: 3}
+  headHitboxRadius: 0.14
+  headHitboxVerticalOffset: 0.06
+  bodyBloodImpactPrefab: {fileID: 1041181722733882, guid: 46cb51842826d77438ecf64a2ff442ae,
+    type: 3}
+  headBloodImpactPrefab: {fileID: 1855497614338780, guid: 0e62d5b045839404282de40af048cf14,
+    type: 3}
   bloodImpactLifetime: 3
-  headshotReceivedSound: {fileID: 8300000, guid: 6fded06dc8008a14b85aa371d92f924b, type: 3}
+  headshotReceivedSound: {fileID: 8300000, guid: 26a2f687958e22e4c99c40ae61695f5a,
+    type: 3}
   headshotReceivedVolume: 1

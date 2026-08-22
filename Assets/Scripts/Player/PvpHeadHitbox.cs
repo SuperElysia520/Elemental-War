@@ -1,6 +1,6 @@
 using UnityEngine;
 
-/// <summary>服务器端 PVP 头部命中区；位置始终跟随 Humanoid 头部骨骼。</summary>
+/// <summary>PVP 头部命中区；服务器用于权威判定，客户端用于即时反馈预测。</summary>
 [DisallowMultipleComponent]
 public class PvpHeadHitbox : MonoBehaviour
 {

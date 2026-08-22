@@ -165,10 +165,12 @@ public class PlayerNetworkSync : NetworkBehaviour
     private void OnLocalFire(Vector3 spawnPos, Vector3 direction)
     {
         // 视觉枪口和真实射线起点分开发送：远端从枪口播曳光，服务器从相机射线复核 PVP 命中。
-        Vector3 shotOrigin = playerModel != null && playerModel.weapon != null
-            ? playerModel.weapon.LastShotOrigin
-            : spawnPos;
-        FireServerRpc(spawnPos, shotOrigin, direction);
+        PlayerWeapon weapon = playerModel != null ? playerModel.weapon : null;
+        Vector3 shotOrigin = weapon != null ? weapon.LastShotOrigin : spawnPos;
+        Vector3 visualTarget = weapon != null
+            ? weapon.LastShotVisualTarget
+            : shotOrigin + direction.normalized * 250f;
+        FireServerRpc(spawnPos, shotOrigin, direction, visualTarget);
     }
 
     [ServerRpc]
@@ -176,6 +178,7 @@ public class PlayerNetworkSync : NetworkBehaviour
         Vector3 visualSpawnPos,
         Vector3 shotOrigin,
         Vector3 direction,
+        Vector3 visualTarget,
         ServerRpcParams rpcParams = default)
     {
         LobbyState lobby = LobbyManager.Instance != null ? LobbyManager.Instance.CurrentLobby : null;
@@ -191,11 +194,32 @@ public class PlayerNetworkSync : NetworkBehaviour
             PvpPlayerCombat.ProcessServerShot(this, shotOrigin, direction, playerModel.weapon);
         }
 
-        FireClientRpc(visualSpawnPos, direction);
+        // 视觉目标仅用于曳光，并限制在武器射程内；真实伤害只采用服务器复核的射线。
+        float visualRange = playerModel != null && playerModel.weapon != null
+            ? Mathf.Max(1f, playerModel.weapon.range)
+            : 250f;
+        Vector3 visualOffset = visualTarget - shotOrigin;
+        if (!IsFinite(visualTarget) ||
+            visualOffset.sqrMagnitude > visualRange * visualRange * 1.01f ||
+            Vector3.Dot(visualOffset, direction) <= 0f)
+        {
+            Vector3 safeDirection = direction.sqrMagnitude > 0.000001f
+                ? direction.normalized
+                : transform.forward;
+            visualTarget = shotOrigin + safeDirection * visualRange;
+        }
+
+        bool convergeVisualToTarget = lobby != null && lobby.GameMode == LobbyGameMode.PVP;
+        FireClientRpc(visualSpawnPos, direction, visualTarget, convergeVisualToTarget);
     }
 
     [ClientRpc]
-    private void FireClientRpc(Vector3 spawnPos, Vector3 direction, ClientRpcParams rpcParams = default)
+    private void FireClientRpc(
+        Vector3 spawnPos,
+        Vector3 direction,
+        Vector3 visualTarget,
+        bool convergeVisualToTarget,
+        ClientRpcParams rpcParams = default)
     {
         // owner 已经自己生成过真实子弹，这里只为远端生成纯视觉镜像
         if (IsOwner || playerModel == null || playerModel.weapon == null)
@@ -207,8 +231,22 @@ public class PlayerNetworkSync : NetworkBehaviour
         Vector3 currentMuzzlePosition = weapon.bulletSpawnPoint != null
             ? weapon.bulletSpawnPoint.position
             : spawnPos;
+        Vector3 visualDirection = direction;
+        if (convergeVisualToTarget)
+        {
+            Vector3 toVisualTarget = visualTarget - currentMuzzlePosition;
+            if (toVisualTarget.sqrMagnitude > 0.000001f)
+                visualDirection = toVisualTarget.normalized;
+        }
         weapon.PlayRemoteShotSound();
-        weapon.SpawnVisual(currentMuzzlePosition, direction);
+        weapon.SpawnVisual(currentMuzzlePosition, visualDirection.normalized);
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) && !float.IsInfinity(value.z);
     }
 
     // ---- 换弹音效同步 ----

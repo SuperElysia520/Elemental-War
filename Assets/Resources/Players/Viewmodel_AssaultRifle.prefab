@@ -31721,6 +31721,20 @@ MonoBehaviour:
   bulletSpawnPoint: {fileID: 3723344484164268292}
   muzzleFlash: {fileID: 831696017020616750}
   sparkParticles: {fileID: 576664364607371881}
+  pvpHolographicEyeRelief: 0.22
+  pvpHolographicAimSmoothTime: 0.15
+  pvpHolographicReticle: {fileID: 21300000, guid: d12f9350e2b99b041b28f8714a37b6ef,
+    type: 3}
+  aimInSound: {fileID: 8300000, guid: 69ba206bce6297342a2c411b302365c7, type: 3}
+  aimInVolume: 1
+  pvpAdsWeaponPitchKick: 0.9
+  pvpAdsWeaponYawKick: 0.28
+  pvpAdsWeaponRollKick: 0.7
+  pvpAdsWeaponBackKick: 0.008
+  pvpAdsWeaponRiseKick: 0
+  pvpAdsWeaponSideKick: 0
+  pvpAdsWeaponKickSpeed: 38
+  pvpAdsWeaponReturnSpeed: 15
 --- !u!1 &6036861880301615478
 GameObject:
   m_ObjectHideFlags: 0

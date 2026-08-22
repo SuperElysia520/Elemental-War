@@ -50,13 +50,16 @@ public static class ViewmodelPrefabBuilder
         foreach (var canvas in copy.GetComponentsInChildren<Canvas>(true))
             Object.DestroyImmediate(canvas.gameObject);
 
-        // 该示例子树同时包含刀和多种瞄具，生成铁瞄步枪时移除这些额外渲染物。
+        // 该示例子树同时包含刀和多种瞄具。保留 PVP 固定使用的 Scope 02 全息瞄具，
+        // 移除其余附件；运行时由 FirstPersonViewmodel 决定 PVE 铁瞄/PVP 全息的可见性。
         foreach (var renderer in copy.GetComponentsInChildren<Renderer>(true))
         {
             if (renderer == null)
                 continue;
             string objectName = renderer.gameObject.name.ToLowerInvariant();
-            if (objectName.Contains("knife") || objectName.StartsWith("scope") || objectName == "silencer")
+            bool unusedScope = objectName.StartsWith("scope") &&
+                !FirstPersonViewmodel.IsHolographicSightRendererName(objectName);
+            if (objectName.Contains("knife") || unusedScope || objectName == "silencer")
                 Object.DestroyImmediate(renderer.gameObject);
         }
 
@@ -77,6 +80,9 @@ public static class ViewmodelPrefabBuilder
         if (muzzle != null) vm.muzzleFlash = muzzle.GetComponent<ParticleSystem>();
         var spark = FindRecursive(copy.transform, "SparkParticles");
         if (spark != null) vm.sparkParticles = spark.GetComponent<ParticleSystem>();
+        vm.pvpHolographicReticle = AssetDatabase.LoadAssetAtPath<Sprite>(
+            "Assets/Plugins/Low Poly FPS Pack/Components/Textures_&_Sprites/Scope_Textures/Red_Dot_Sight_2_Texture.png");
+        vm.aimInSound = AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Resource/Audio/aim_in.mp3");
 
         string outPath = $"{OutDir}/{OutName}.prefab";
         PrefabUtility.SaveAsPrefabAsset(copy, outPath);

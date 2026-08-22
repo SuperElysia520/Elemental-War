@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using Unity.Collections;
 using Unity.Netcode;
@@ -12,6 +13,20 @@ public class PvpPlayerCombat : NetworkBehaviour
 {
     private const float ShotOriginProbeRadius = 0.02f;
     private static readonly Collider[] ShotOriginOverlapBuffer = new Collider[32];
+    private const float PredictedImpactMatchDistance = 0.3f;
+    private const float PredictedImpactLifetime = 0.75f;
+
+    private struct PredictedImpact
+    {
+        public ulong TargetNetworkObjectId;
+        public Vector3 HitPoint;
+        public bool IsHeadshot;
+        public float ExpiresAt;
+    }
+
+    // 仅存在于各客户端进程：射手先显示血花，服务器确认到达后在射手端消除重复特效。
+    private static readonly List<PredictedImpact> PredictedImpacts =
+        new List<PredictedImpact>(16);
 
     [Tooltip("PVP 最大生命值")]
     public float maxHealth = 100f;
@@ -146,8 +161,8 @@ public class PvpPlayerCombat : NetworkBehaviour
         }
 
         m_NetworkSync = GetComponent<PlayerNetworkSync>();
-        if (IsServer)
-            EnsureHeadHitbox();
+        // 服务器使用它做权威爆头判定；客户端使用同样的区域做即时命中反馈预测。
+        EnsureHeadHitbox();
         CaptureVisualAndColliderStates();
 
         IsDead.OnValueChanged += HandleDeadChanged;
@@ -439,15 +454,8 @@ public class PvpPlayerCombat : NetworkBehaviour
     [ClientRpc]
     private void ShowHitFeedbackClientRpc(Vector3 hitPoint, Vector3 shotDirection, bool isHeadshot)
     {
-        GameObject bloodPrefab = isHeadshot ? headBloodImpactPrefab : bodyBloodImpactPrefab;
-        if (bloodPrefab != null)
-        {
-            Quaternion rotation = shotDirection.sqrMagnitude > 0.000001f
-                ? Quaternion.LookRotation(-shotDirection.normalized)
-                : Quaternion.identity;
-            GameObject bloodImpact = Instantiate(bloodPrefab, hitPoint, rotation);
-            Destroy(bloodImpact, Mathf.Max(0.1f, bloodImpactLifetime));
-        }
+        if (!ConsumePredictedImpact(hitPoint, isHeadshot))
+            SpawnBloodImpact(hitPoint, shotDirection, isHeadshot);
 
         // 被爆头反馈只给受害玩家本人播放；血花仍由此 RPC 在所有客户端生成。
         if (isHeadshot && IsOwner && headshotReceivedSound != null)
@@ -460,6 +468,75 @@ public class PvpPlayerCombat : NetworkBehaviour
                 m_LocalHeadshotAudioSource.spatialBlend = 0f;
             }
             m_LocalHeadshotAudioSource.PlayOneShot(headshotReceivedSound, headshotReceivedVolume);
+        }
+    }
+
+    /// <summary>
+    /// 射手客户端即时显示预测血花；不修改任何 NetworkVariable，也不会触发死亡或计分。
+    /// </summary>
+    public void ShowPredictedHitFeedback(Vector3 hitPoint, Vector3 shotDirection, bool isHeadshot)
+    {
+        if (!IsSpawned || !m_IsPvpSession || IsDead.Value)
+            return;
+
+        CleanupExpiredPredictedImpacts();
+        SpawnBloodImpact(hitPoint, shotDirection, isHeadshot);
+        PredictedImpacts.Add(new PredictedImpact
+        {
+            TargetNetworkObjectId = NetworkObjectId,
+            HitPoint = hitPoint,
+            IsHeadshot = isHeadshot,
+            ExpiresAt = Time.unscaledTime + PredictedImpactLifetime,
+        });
+    }
+
+    private void SpawnBloodImpact(Vector3 hitPoint, Vector3 shotDirection, bool isHeadshot)
+    {
+        GameObject bloodPrefab = isHeadshot ? headBloodImpactPrefab : bodyBloodImpactPrefab;
+        if (bloodPrefab != null)
+        {
+            Quaternion rotation = shotDirection.sqrMagnitude > 0.000001f
+                ? Quaternion.LookRotation(-shotDirection.normalized)
+                : Quaternion.identity;
+            GameObject bloodImpact = Instantiate(bloodPrefab, hitPoint, rotation);
+            Destroy(bloodImpact, Mathf.Max(0.1f, bloodImpactLifetime));
+        }
+    }
+
+    private bool ConsumePredictedImpact(Vector3 hitPoint, bool isHeadshot)
+    {
+        float now = Time.unscaledTime;
+        float maxSqrDistance = PredictedImpactMatchDistance * PredictedImpactMatchDistance;
+        for (int i = PredictedImpacts.Count - 1; i >= 0; i--)
+        {
+            PredictedImpact predicted = PredictedImpacts[i];
+            if (predicted.ExpiresAt < now)
+            {
+                PredictedImpacts.RemoveAt(i);
+                continue;
+            }
+
+            if (predicted.TargetNetworkObjectId != NetworkObjectId ||
+                predicted.IsHeadshot != isHeadshot ||
+                (predicted.HitPoint - hitPoint).sqrMagnitude > maxSqrDistance)
+            {
+                continue;
+            }
+
+            PredictedImpacts.RemoveAt(i);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void CleanupExpiredPredictedImpacts()
+    {
+        float now = Time.unscaledTime;
+        for (int i = PredictedImpacts.Count - 1; i >= 0; i--)
+        {
+            if (PredictedImpacts[i].ExpiresAt < now)
+                PredictedImpacts.RemoveAt(i);
         }
     }
 
@@ -482,9 +559,13 @@ public class PvpPlayerCombat : NetworkBehaviour
         }
 
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-        GameObject hitboxObject = new GameObject("__PvpHeadHitbox");
-        hitboxObject.layer = gameObject.layer;
-        PvpHeadHitbox hitbox = hitboxObject.AddComponent<PvpHeadHitbox>();
+        PvpHeadHitbox hitbox = GetComponentInChildren<PvpHeadHitbox>(true);
+        if (hitbox == null)
+        {
+            GameObject hitboxObject = new GameObject("__PvpHeadHitbox");
+            hitboxObject.layer = gameObject.layer;
+            hitbox = hitboxObject.AddComponent<PvpHeadHitbox>();
+        }
         hitbox.Initialize(this, headBone, headHitboxRadius, headHitboxVerticalOffset);
     }
 

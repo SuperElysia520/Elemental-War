@@ -59,6 +59,26 @@ public class PlayerController : SingleMonoBase<PlayerController>
         new Vector2(0.58f, 0.42f), new Vector2(0.38f, 0.40f), new Vector2(0.00f, 0.38f),
         new Vector2(-0.38f, 0.36f), new Vector2(-0.56f, 0.34f)
     };
+
+    [Header("PVP 射击手感")]
+    [Tooltip("PVP 垂直后坐力倍率")]
+    public float pvpVerticalRecoilMultiplier = 1.35f;
+    [Tooltip("PVP 水平弹道倍率；用于让连续射击出现清晰的左右摆动")]
+    public float pvpHorizontalRecoilMultiplier = 2f;
+    [Tooltip("PVP 开镜时在原 aimingRecoilMultiplier 基础上的补偿倍率")]
+    public float pvpAimingRecoilMultiplier = 1.35f;
+    [Tooltip("每发附加的轻微随机水平冲击角度，不影响准心与落点一致性")]
+    public float pvpHorizontalJitter = 0.05f;
+    [Tooltip("每发瞬时镜头上跳角度")]
+    public float pvpCameraImpulsePitch = 0.65f;
+    [Tooltip("每发瞬时镜头左右冲击角度")]
+    public float pvpCameraImpulseYaw = 0.16f;
+    [Tooltip("每发瞬时镜头侧倾角度")]
+    public float pvpCameraImpulseRoll = 0.28f;
+    [Tooltip("每发镜头向后位移距离")]
+    public float pvpCameraKickback = 0.018f;
+    [Tooltip("瞬时镜头冲击恢复速度")]
+    public float pvpCameraImpulseReturnSpeed = 20f;
     #endregion
     
 
@@ -68,12 +88,19 @@ public class PlayerController : SingleMonoBase<PlayerController>
     private float pitch;
     private Vector2 recoilTarget;
     private Vector2 recoilCurrent;
+    private Vector3 cameraRecoilImpulse;
+    private float cameraKickbackImpulse;
     private int recoilShotIndex;
     private float lastRecoilShotTime = -999f;
     private readonly RaycastHit[] aimHits = new RaycastHit[32];
+    private readonly RaycastHit[] pvpPredictionHits = new RaycastHit[32];
     private PlayerModel hiddenBody; // 当前被隐藏渲染的身体（本地不显示自己的第三人称身体）
     private Coroutine autoReloadCoroutine;
     private PlayerWeapon autoReloadWeapon;
+    private GameObject pvpCrosshair;
+    private GameObject pvpCrosshairPoint;
+    private bool pvpCrosshairInitialActive;
+    private bool pvpCrosshairPointInitialActive;
     #endregion
 
     #region 玩家输入相关
@@ -172,6 +199,10 @@ public class PlayerController : SingleMonoBase<PlayerController>
         if (Time.time - lastRecoilShotTime >= recoilPatternResetDelay)
             recoilShotIndex = 0;
         recoilCurrent = Vector2.Lerp(recoilCurrent, recoilTarget, kickT);
+        float cameraImpulseT = 1f - Mathf.Exp(
+            -Mathf.Max(0.01f, pvpCameraImpulseReturnSpeed) * Time.deltaTime);
+        cameraRecoilImpulse = Vector3.Lerp(cameraRecoilImpulse, Vector3.zero, cameraImpulseT);
+        cameraKickbackImpulse = Mathf.Lerp(cameraKickbackImpulse, 0f, cameraImpulseT);
         // 身体朝向始终跟随相机 yaw（第一人称）
         currentPlayerModel.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
         #endregion
@@ -190,7 +221,14 @@ public class PlayerController : SingleMonoBase<PlayerController>
         if (viewmodel != null)
         {
             bool moving = moveInput.sqrMagnitude > 0.0001f;
-            Vector3 targetOffset = isAiming ? viewmodelAimOffset : viewmodelOffset;
+            viewmodel.ClearPvpWeaponRecoilPose();
+            viewmodel.ClearHolographicAlignmentCorrection();
+            viewmodel.UpdatePvpWeaponRecoil(Time.deltaTime);
+            bool usesPvpHolographicAlignment = viewmodel.CanAlignPvpHolographicSight;
+            // 全息瞄具由自身动画抬枪，根节点保持腰射基础位置；动画后的精确居中在 LateUpdate 完成。
+            Vector3 targetOffset = isAiming && !usesPvpHolographicAlignment
+                ? viewmodelAimOffset
+                : viewmodelOffset;
             float offsetT = 1f - Mathf.Exp(-viewmodelOffsetLerpSpeed * Time.deltaTime);
             viewmodel.transform.localPosition = Vector3.Lerp(
                 viewmodel.transform.localPosition,
@@ -200,6 +238,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
             viewmodel.SetAiming(isAiming);
             viewmodel.SetMoving(moving && !isSprint && !weaponReloading);
             viewmodel.SetRunning(moving && isSprint && !weaponReloading);
+            UpdatePvpCrosshairVisibility();
         }
         #endregion
 
@@ -233,13 +272,34 @@ public class PlayerController : SingleMonoBase<PlayerController>
         if (currentPlayerModel == null || mainCamera == null)
             return;
 
-        // 相机跟随角色眼睛
-        mainCamera.transform.position = currentPlayerModel.transform.position + Vector3.up * eyeHeight;
-        float recoilPitch = Mathf.Clamp(pitch - recoilCurrent.y, pitchMin, pitchMax);
-        mainCamera.transform.rotation = Quaternion.Euler(recoilPitch, yaw + recoilCurrent.x, 0f);
+        // 相机跟随角色眼睛。持续后坐力负责弹道爬升，瞬时冲击负责每发的震动、侧倾与后移。
+        Vector3 eyePosition = currentPlayerModel.transform.position + Vector3.up * eyeHeight;
+        float recoilPitch = Mathf.Clamp(
+            pitch - recoilCurrent.y - cameraRecoilImpulse.x,
+            pitchMin,
+            pitchMax);
+        Quaternion cameraRotation = Quaternion.Euler(
+            recoilPitch,
+            yaw + recoilCurrent.x + cameraRecoilImpulse.y,
+            cameraRecoilImpulse.z);
+        mainCamera.transform.rotation = cameraRotation;
+        mainCamera.transform.position = eyePosition + cameraRotation * (Vector3.back * cameraKickbackImpulse);
 
-        // 瞄准时缩小 FOV
-        float targetFov = isAiming ? aimFov : defaultFov;
+        // Animator 已计算完本帧姿势：先完成静态开镜对齐，再让镜框、红点和整枪一起承受后坐。
+        if (viewmodel != null)
+        {
+            viewmodel.UpdateHolographicAlignment(mainCamera.transform, isAiming && IsCurrentPlayerPvp());
+            viewmodel.ApplyPvpWeaponRecoilPose(isAiming && IsCurrentPlayerPvp());
+            viewmodel.CapturePvpRenderedAimDirection(
+                mainCamera.transform,
+                isAiming && IsCurrentPlayerPvp());
+        }
+
+        // PVP 固定全息瞄具按 1.5x 计算 FOV；PVE 继续使用原有 aimFov。
+        float activeAimFov = viewmodel != null
+            ? viewmodel.GetAimFieldOfView(defaultFov, aimFov)
+            : aimFov;
+        float targetFov = isAiming ? activeAimFov : defaultFov;
         mainCamera.fieldOfView = Mathf.Lerp(mainCamera.fieldOfView, targetFov, fovLerpSpeed * Time.deltaTime);
     }
 
@@ -324,6 +384,48 @@ public class PlayerController : SingleMonoBase<PlayerController>
                 viewmodel = go.GetComponent<FirstPersonViewmodel>();
             }
         }
+
+        if (viewmodel != null)
+            viewmodel.ConfigurePvpHolographicSight(IsCurrentPlayerPvp());
+        ResolvePvpCrosshair();
+        UpdatePvpCrosshairVisibility();
+    }
+
+    private bool IsCurrentPlayerPvp()
+    {
+        return currentPlayerModel != null && currentPlayerModel.GetComponent<PvpPlayerCombat>() != null;
+    }
+
+    private void ResolvePvpCrosshair()
+    {
+        if (!IsCurrentPlayerPvp())
+            return;
+
+        if (pvpCrosshair == null)
+        {
+            pvpCrosshair = GameObject.Find("CrossHair");
+            if (pvpCrosshair != null)
+                pvpCrosshairInitialActive = pvpCrosshair.activeSelf;
+        }
+        if (pvpCrosshairPoint == null)
+        {
+            pvpCrosshairPoint = GameObject.Find("CrossHairPoint");
+            if (pvpCrosshairPoint != null)
+                pvpCrosshairPointInitialActive = pvpCrosshairPoint.activeSelf;
+        }
+    }
+
+    private void UpdatePvpCrosshairVisibility()
+    {
+        if (!IsCurrentPlayerPvp())
+            return;
+
+        ResolvePvpCrosshair();
+        bool showScreenCrosshair = !isAiming;
+        if (pvpCrosshair != null)
+            pvpCrosshair.SetActive(showScreenCrosshair && pvpCrosshairInitialActive);
+        if (pvpCrosshairPoint != null)
+            pvpCrosshairPoint.SetActive(showScreenCrosshair && pvpCrosshairPointInitialActive);
     }
 
     private void SetBodyRenderers(PlayerModel model, bool visible)
@@ -423,31 +525,127 @@ public class PlayerController : SingleMonoBase<PlayerController>
         }
 
         Vector3 visualOrigin = FireOrigin;
-        bool usePvpAimRay = mainCamera != null &&
-            currentPlayerModel.GetComponent<PvpPlayerCombat>() != null;
+        bool usePvpAimRay = mainCamera != null && IsCurrentPlayerPvp();
         Vector3 hitOrigin = usePvpAimRay ? mainCamera.transform.position : visualOrigin;
         Vector3 hitDirection = usePvpAimRay
             ? mainCamera.transform.forward
             : GetFireDirection(visualOrigin);
+        if (usePvpAimRay && isAiming && viewmodel != null)
+            viewmodel.TryGetPvpRenderedAimDirection(mainCamera.transform, out hitDirection);
         bool grounded = currentPlayerModel.cc != null && currentPlayerModel.cc.isGrounded;
         bool moving = moveInput.sqrMagnitude > 0.0001f;
-        float spread = weapon.CalculateSpread(
-            moving,
-            isSprint,
-            grounded,
-            isAiming,
-            recoilShotIndex);
+        // PVP 采用“准心即落点”：腰射走屏幕准心，开镜走实际渲染出的全息红点方向，
+        // 不再额外叠加一层不可见随机散布。
+        // PVE 保留原有移动、腾空与连续射击散布。
+        float spread = usePvpAimRay
+            ? 0f
+            : weapon.CalculateSpread(
+                moving,
+                isSprint,
+                grounded,
+                isAiming,
+                recoilShotIndex);
 
         bool fired = usePvpAimRay
-            ? weapon.Fire(hitOrigin, hitDirection, visualOrigin, spread)
+            ? weapon.Fire(hitOrigin, hitDirection, visualOrigin, spread, true)
             : weapon.Fire(hitOrigin, hitDirection, spread);
         if (fired)
         {
             PlayFireView();
+            if (usePvpAimRay)
+                PredictPvpHitFeedback(hitOrigin, hitDirection, weapon);
             ShakeCamera();
             if (weapon.CurrentAmmo <= 0)
                 QueueAutoReload(weapon);
         }
+    }
+
+    /// <summary>
+    /// 本地只预测血花反馈，不修改血量、爆头统计或死亡状态；最终结果仍由服务器确认。
+    /// </summary>
+    private void PredictPvpHitFeedback(Vector3 origin, Vector3 direction, PlayerWeapon weapon)
+    {
+        PvpPlayerCombat shooter = currentPlayerModel != null
+            ? currentPlayerModel.GetComponent<PvpPlayerCombat>()
+            : null;
+        if (shooter == null || weapon == null || direction.sqrMagnitude <= 0.000001f)
+            return;
+
+        Vector3 shotDirection = direction.normalized;
+        int hitCount = Physics.RaycastNonAlloc(
+            origin,
+            shotDirection,
+            pvpPredictionHits,
+            weapon.range,
+            weapon.hitMask,
+            QueryTriggerInteraction.Collide);
+
+        Collider nearestSolid = null;
+        float nearestSolidDistance = weapon.range;
+        Vector3 nearestSolidPoint = origin + shotDirection * weapon.range;
+        PvpHeadHitbox nearestHead = null;
+        float nearestHeadDistance = weapon.range;
+        Vector3 nearestHeadPoint = nearestSolidPoint;
+
+        for (int i = 0; i < hitCount; i++)
+        {
+            RaycastHit hit = pvpPredictionHits[i];
+            if (hit.collider == null || IsLocalPlayerCollider(hit.collider.transform))
+                continue;
+
+            PvpHeadHitbox headHitbox = hit.collider.GetComponent<PvpHeadHitbox>();
+            if (hit.collider.isTrigger)
+            {
+                if (headHitbox != null && hit.distance < nearestHeadDistance)
+                {
+                    nearestHead = headHitbox;
+                    nearestHeadDistance = hit.distance;
+                    nearestHeadPoint = hit.point;
+                }
+                continue;
+            }
+
+            if (hit.distance < nearestSolidDistance)
+            {
+                nearestSolid = hit.collider;
+                nearestSolidDistance = hit.distance;
+                nearestSolidPoint = hit.point;
+            }
+        }
+
+        PvpPlayerCombat victim = nearestSolid != null
+            ? nearestSolid.GetComponentInParent<PvpPlayerCombat>()
+            : null;
+        bool isHeadshot = false;
+        Vector3 hitPoint = nearestSolidPoint;
+
+        if (victim != null)
+        {
+            for (int i = 0; i < hitCount; i++)
+            {
+                RaycastHit hit = pvpPredictionHits[i];
+                PvpHeadHitbox headHitbox = hit.collider != null
+                    ? hit.collider.GetComponent<PvpHeadHitbox>()
+                    : null;
+                if (headHitbox == null || headHitbox.Owner != victim)
+                    continue;
+
+                isHeadshot = true;
+                hitPoint = hit.point;
+                break;
+            }
+        }
+        else if (nearestHead != null && nearestHeadDistance < nearestSolidDistance)
+        {
+            victim = nearestHead.Owner;
+            isHeadshot = true;
+            hitPoint = nearestHeadPoint;
+        }
+
+        if (victim == null || victim == shooter || victim.Team == shooter.Team)
+            return;
+
+        victim.ShowPredictedHitFeedback(hitPoint, shotDirection, isHeadshot);
     }
 
     private void TryReload()
@@ -521,19 +719,52 @@ public class PlayerController : SingleMonoBase<PlayerController>
         Vector2 patternStep = recoilPattern != null && recoilPattern.Length > 0
             ? recoilPattern[Mathf.Min(recoilShotIndex, recoilPattern.Length - 1)]
             : new Vector2(0f, 0.65f);
+        bool usePvpRecoil = IsCurrentPlayerPvp();
         float multiplier = isAiming ? aimingRecoilMultiplier : 1f;
+        if (usePvpRecoil && isAiming)
+            multiplier *= pvpAimingRecoilMultiplier;
+        float verticalMultiplier = usePvpRecoil ? pvpVerticalRecoilMultiplier : 1f;
+        float horizontalMultiplier = usePvpRecoil ? pvpHorizontalRecoilMultiplier : 1f;
+        float horizontalJitter = usePvpRecoil
+            ? Random.Range(-pvpHorizontalJitter, pvpHorizontalJitter)
+            : 0f;
         recoilTarget.y = Mathf.Clamp(
-            recoilTarget.y + patternStep.y * recoilPitchPerShot * multiplier,
+            recoilTarget.y + patternStep.y * recoilPitchPerShot * multiplier * verticalMultiplier,
             0f,
             recoilMaxPitch);
+        float horizontalDelta =
+            (patternStep.x * recoilYawPerShot * horizontalMultiplier + horizontalJitter) * multiplier;
         recoilTarget.x = Mathf.Clamp(
-            recoilTarget.x + patternStep.x * recoilYawPerShot * multiplier,
+            recoilTarget.x + horizontalDelta,
             -recoilMaxYaw,
             recoilMaxYaw);
+
+        if (usePvpRecoil)
+        {
+            float side = Mathf.Abs(horizontalDelta) > 0.001f
+                ? Mathf.Sign(horizontalDelta)
+                : (Random.value < 0.5f ? -1f : 1f);
+            cameraRecoilImpulse.x = Mathf.Min(
+                cameraRecoilImpulse.x + pvpCameraImpulsePitch * multiplier,
+                pvpCameraImpulsePitch * 2.25f);
+            cameraRecoilImpulse.y = Mathf.Clamp(
+                horizontalDelta * 0.3f + Random.Range(-pvpCameraImpulseYaw, pvpCameraImpulseYaw),
+                -pvpCameraImpulseYaw * 1.5f,
+                pvpCameraImpulseYaw * 1.5f);
+            cameraRecoilImpulse.z = -side * pvpCameraImpulseRoll * multiplier;
+            cameraKickbackImpulse = Mathf.Min(
+                cameraKickbackImpulse + pvpCameraKickback * multiplier,
+                pvpCameraKickback * 2f);
+            if (viewmodel != null)
+                viewmodel.AddPvpAdsShotRecoil(side, multiplier);
+        }
         recoilShotIndex++;
         lastRecoilShotTime = Time.time;
         // 当帧立即踢起，后续再由 Update 做平滑累积与回正。
-        recoilCurrent = Vector2.Lerp(recoilCurrent, recoilTarget, 0.35f);
+        recoilCurrent = Vector2.Lerp(
+            recoilCurrent,
+            recoilTarget,
+            usePvpRecoil ? 0.78f : 0.35f);
 
         // 保留旧 Cinemachine Impulse；如果未启用 Brain，手动后坐力仍然会生效。
         if (impulseSource != null)
@@ -549,5 +780,17 @@ public class PlayerController : SingleMonoBase<PlayerController>
     {
         CancelQueuedAutoReload();
         input.Disable();
+        if (pvpCrosshair != null)
+            pvpCrosshair.SetActive(pvpCrosshairInitialActive);
+        if (pvpCrosshairPoint != null)
+            pvpCrosshairPoint.SetActive(pvpCrosshairPointInitialActive);
+        if (viewmodel != null && IsCurrentPlayerPvp())
+            viewmodel.SetAiming(false);
+        recoilTarget = Vector2.zero;
+        recoilCurrent = Vector2.zero;
+        cameraRecoilImpulse = Vector3.zero;
+        cameraKickbackImpulse = 0f;
+        if (viewmodel != null)
+            viewmodel.ResetPvpWeaponRecoil();
     }
 }
