@@ -550,11 +550,27 @@ public class PlayerController : SingleMonoBase<PlayerController>
         SetupLocalView();
     }
 
+    public void UseFullBodyCharacter(PlayerModel model)
+    {
+        if (hiddenBody != null) SetBodyRenderers(hiddenBody, true);
+        hiddenBody = null;
+        if (viewmodel != null) Destroy(viewmodel.gameObject);
+        viewmodel = null;
+        currentPlayerModel = model;
+        disableModelSwitching = true;
+        enabled = false;
+    }
+
     /// <summary>
     /// 建立本地第一人称视角：隐藏自己的第三人称身体，实例化手臂 viewmodel。
     /// </summary>
     private void SetupLocalView()
     {
+        if (currentPlayerModel != null && currentPlayerModel.GetComponent<PvpFullBodyController>() != null)
+        {
+            UseFullBodyCharacter(currentPlayerModel);
+            return;
+        }
         if (mainCamera == null)
             mainCamera = Camera.main;
         if (mainCamera == null)

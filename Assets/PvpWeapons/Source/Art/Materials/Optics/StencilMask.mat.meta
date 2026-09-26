@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c687ab51d00a91b4894a19d55b274231
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.0
+  assetPath: Assets/Akila/FPS Framework/Art/Materials/Optics/StencilMask.mat
+  uploadId: 855696

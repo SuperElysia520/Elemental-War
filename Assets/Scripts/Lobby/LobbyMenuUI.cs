@@ -606,7 +606,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
                        && (!m_SelectedRoom.isDedicatedPvp || m_SelectedRoom.hasRoom)
                        && !m_SelectedRoom.isStarted
                        && m_SelectedRoom.currentPlayers < m_SelectedRoom.maxPlayers;
-        btnJoin.interactable = CanInteract && canJoin;
+        btnJoin.interactable = CanInteract && canJoin && (Lobby == null || !Lobby.IsConnecting);
     }
 
     private void RefreshSelectionHighlight()
@@ -625,15 +625,23 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         if (Lobby == null)
             return;
 
-        if (panelInRoom != null && panelInRoom.activeSelf && !Lobby.IsInLobby)
+        if (btnCreateRoom != null) btnCreateRoom.interactable = CanInteract && !Lobby.IsConnecting;
+        if (btnRefresh != null) btnRefresh.interactable = CanInteract && !Lobby.IsConnecting;
+        UpdateJoinButtonState();
+
+        if (panelInRoom != null && panelInRoom.activeSelf && !Lobby.IsInLobby && !Lobby.IsConnecting)
         {
-            string reason = NetworkManager.Singleton != null
-                ? NetworkManager.Singleton.DisconnectReason
-                : string.Empty;
+            string reason = Lobby.ConnectionStatus;
+            if (string.IsNullOrWhiteSpace(reason) && NetworkManager.Singleton != null)
+                reason = NetworkManager.Singleton.DisconnectReason;
             ShowBrowseView();
-            SetStatus(string.IsNullOrWhiteSpace(reason) ? "连接已断开" : "连接已断开：" + reason);
+            SetStatus(string.IsNullOrWhiteSpace(reason) ? "连接已断开" : reason);
+            if (m_RequestedGameMode == LobbyGameMode.PVP) Lobby.StartDedicatedPvpRoomDiscovery(out _);
             return;
         }
+
+        if (!string.IsNullOrWhiteSpace(Lobby.ConnectionStatus))
+            SetStatus(Lobby.ConnectionStatus);
 
         LobbyState state = Lobby.CurrentLobby;
         bool isPvp = state != null ? state.GameMode == LobbyGameMode.PVP : m_RequestedGameMode == LobbyGameMode.PVP;
@@ -823,7 +831,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
             new Vector2(160f, 38f),
             22,
             Color.white,
-            TextAnchor.MiddleRight).text = "选择角色：";
+            TextAnchor.MiddleRight).text = "我的角色：";
         for (byte i = 0; i < LobbyState.PvpCharacterCount; i++)
             m_CharacterButtons.Add(CreateCharacterButton(i, new Vector2(-120f + i * 145f, 245f)));
 
@@ -881,9 +889,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     {
         switch (characterIndex)
         {
-            case 0: return "Lumine";
-            case 1: return "Furina";
-            case 2: return "Aether";
+            case 0: return "RifleGirl";
             default: return "未选择";
         }
     }

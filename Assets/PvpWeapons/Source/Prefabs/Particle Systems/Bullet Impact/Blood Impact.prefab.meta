@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: fcd27e9b64f619746991b41c831fd719
+labels:
+- Effect
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Particle Systems/Bullet Impact/Blood
+    Impact.prefab
+  uploadId: 943244

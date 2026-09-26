@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: eb429d49e6f363846ad96f198ba8f7d7
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Art/Shaders/LaserNoise.shader
+  uploadId: 943244

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: d2e3ec557dc71d040954ca3f3fd2a7f7
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Art/Shaders/Lens.shader
+  uploadId: 943244

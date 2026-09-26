@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: b59bdbe3ae563544c9c624ef3653f87f
+labels:
+- Weapon
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Weapons/Pistol_1.prefab
+  uploadId: 943244

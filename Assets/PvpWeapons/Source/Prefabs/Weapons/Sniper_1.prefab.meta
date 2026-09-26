@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 2c6fcc7a75e3b6541a71cc927bb824c7
+labels:
+- Weapon
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Weapons/Sniper_1.prefab
+  uploadId: 943244

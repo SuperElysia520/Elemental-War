@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: fc8c1e75d67dd7a45825952ece5aa0f0
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.0
+  assetPath: Assets/Akila/FPS Framework/Art/Materials/Optics/Guns_StencileGeometry.mat
+  uploadId: 855696

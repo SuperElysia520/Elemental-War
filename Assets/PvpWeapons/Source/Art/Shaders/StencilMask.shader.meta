@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: a90aab60201ff3e4fa10061a679b5fc5
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Art/Shaders/StencilMask.shader
+  uploadId: 943244

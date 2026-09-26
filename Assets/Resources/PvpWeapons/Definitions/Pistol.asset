@@ -1,0 +1,209 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 273ea820e26b4063ae2d6e9dfb2b6481, type: 3}
+  m_Name: Pistol
+  m_EditorClassIdentifier: 
+  weaponId: 1
+  displayName: Pistol_1
+  modelPrefab: {fileID: 2325977843347930692, guid: 255a07badaa4a6d40b242500f2dfa8d3,
+    type: 3}
+  automatic: 0
+  selectiveFire: 0
+  roundsPerMinute: 1000
+  actionCycleDuration: 0
+  magazineCapacity: 12
+  reserveAmmo: 200
+  keepChamberedRound: 1
+  reloadDuration: 2
+  emptyReloadDuration: 2
+  equipDuration: 0.96666664
+  muzzleVelocity: 250
+  gravity: 9.81
+  drag: 0.1
+  projectileLifetime: 5
+  hitRadius: 0.01
+  damage: 31
+  headDamageMultiplier: 2.5
+  limbDamageMultiplier: 1
+  range: 200
+  impactForce: 15
+  damageOverRange:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0.01
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  aimDuration: 0.2
+  aimMovementMultiplier: 0.5
+  fireMovementMultiplier: 0.4
+  sights:
+  - sightId: 0
+    displayName: "\u673A\u7784"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 55
+    secondaryFieldOfView: 0
+    magnified: 0
+  - sightId: 3
+    displayName: "\u7EA2\u70B9 3"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 55
+    secondaryFieldOfView: 0
+    magnified: 0
+  hipSpray:
+    maxAmount: 6
+    passiveMultiplier: 0.3
+    rampUpTime: 0.5
+    recoveryTime: 0.1
+    autoFill: 1
+    loop: 1
+    points:
+    - {x: 0, y: 0}
+    - {x: -0.6636556, y: 0.71729016}
+    - {x: 0.5569388, y: 0.77276546}
+    - {x: -0.9355124, y: 0.3389073}
+    - {x: -0.55402863, y: -0.28197035}
+    - {x: 0.26511094, y: -0.5771684}
+    - {x: 0.33874926, y: 0.3333106}
+    - {x: -0.720673, y: 0.3070054}
+    - {x: 0.124689855, y: 0.6393783}
+    - {x: 0.1906023, y: 0.83664644}
+    - {x: 0.37650815, y: -0.61035013}
+    - {x: 0.1476089, y: 0.959766}
+    - {x: -0.16495943, y: -0.5270426}
+    - {x: -0.20430213, y: -0.3095098}
+    - {x: -0.06395438, y: 0.83048517}
+    - {x: -0.0056381472, y: 0.51420075}
+    - {x: -0.9200064, y: 0.28151804}
+    - {x: 0.60437757, y: -0.12462533}
+    - {x: -0.48081115, y: -0.015521643}
+    - {x: 0.28893307, y: -0.02482232}
+    - {x: 0.5145531, y: -0.59401536}
+  aimSpray:
+    maxAmount: 0.5
+    passiveMultiplier: 0.097
+    rampUpTime: 0.1
+    recoveryTime: 0.05
+    autoFill: 1
+    loop: 1
+    points:
+    - {x: 0, y: 0}
+    - {x: 0.24193001, y: -0.5503968}
+    - {x: -0.08786958, y: 0.85341215}
+    - {x: -0.10396494, y: -0.85982555}
+    - {x: 0.27685174, y: 0.12537676}
+    - {x: -0.23073094, y: -0.30676046}
+    - {x: -0.10816398, y: -0.68633217}
+    - {x: -0.30224034, y: -0.92183036}
+    - {x: -0.60973096, y: 0.3413104}
+    - {x: -0.1630117, y: 0.36919972}
+    - {x: 0.3470416, y: -0.053765245}
+    - {x: 0.44522497, y: -0.40834308}
+    - {x: 0.29836717, y: -0.6963988}
+    - {x: -0.79341966, y: 0.2214429}
+    - {x: -0.5446102, y: -0.09019563}
+    - {x: -0.5241545, y: -0.10305558}
+    - {x: 0.30947796, y: 0.59467405}
+    - {x: 0.58800006, y: 0.065999754}
+  hipKick:
+    staticPosition: {x: 0, y: 0, z: -0.5}
+    staticRotation: {x: -25, y: 25, z: 0}
+    randomPosition: {x: 0, y: 0, z: 0}
+    randomRotation: {x: -25, y: 7, z: 0}
+    positionRoughness: 10
+    rotationRoughness: 25
+    springPosition: {x: 0, y: 0.02, z: -0.02}
+    springRotation: {x: -3, y: 0, z: 0}
+    springPositionSpeed: 10
+    springRotationSpeed: 20
+    springPositionFade: 1
+    springRotationFade: 0.7
+    springSpeedMultiplier: 1
+  aimKick:
+    staticPosition: {x: 0, y: 0, z: -0.1}
+    staticRotation: {x: -15, y: 15, z: 0}
+    randomPosition: {x: 0, y: 0, z: 0}
+    randomRotation: {x: -15, y: 7, z: 0}
+    positionRoughness: 10
+    rotationRoughness: 25
+    springPosition: {x: 0, y: 0.007, z: -0.01}
+    springRotation: {x: -2, y: 0.08, z: 0}
+    springPositionSpeed: 10
+    springRotationSpeed: 20
+    springPositionFade: 1
+    springRotationFade: 0.7
+    springSpeedMultiplier: 1
+  motion:
+    swayAmplification: 0.5
+    swaySmoothness: 5
+    swayPositionInput: 0.0005
+    swayRotationInput: 0.2
+    swayPositionLimit: 1
+    swayRotationLimit: 20
+    hipBreathPosition: {x: 0, y: 0.005, z: 0}
+    hipBreathRotation: {x: -0.68, y: 0, z: 1}
+    aimBreathPosition: {x: 0.0005, y: 0.001, z: 0}
+    aimBreathPositionFrequency: {x: 1.21, y: 1, z: 1}
+    aimBreathRotation: {x: -0.1, y: 0, z: 0}
+    walkPosition: {x: 0.0005, y: 0.0005, z: 0.0005}
+    walkPositionFrequency: {x: 1, y: 2, z: 2}
+    walkRotation: {x: 0.07, y: 0, z: -0.3}
+    walkRotationFrequency: {x: 2, y: 0, z: 1}
+    sprintPosition: {x: -0.05, y: -0.08, z: -0.04}
+    sprintRotation: {x: 12.4, y: -15.52, z: 41.6}
+    sprintDuration: 0.25
+  cameraRecoil: 5
+  horizontalRecoil: 0.7
+  verticalRecoil: 0.1
+  cameraShakeAmount: 0.1
+  cameraShakeRoughness: 1
+  cameraShakeDuration: 0.2
+  fireClip: {fileID: 8300000, guid: 5cf46115d1060b34da73bdd7142ba54e, type: 3}
+  reloadClip: {fileID: 0}
+  emptyReloadClip: {fileID: 0}
+  equipClip: {fileID: 0}
+  firePitch: 1
+  firePitchRandomness: 0.24
+  fireVolume: 1
+  reloadPitch: 0.97
+  audioMaxDistance: 150
+  fireCues: []
+  reloadCues:
+  - time: 0
+    clip: {fileID: 8300000, guid: c6f742db31059134183c51cbd9faf8a5, type: 3}
+  - time: 0.7
+    clip: {fileID: 8300000, guid: 5eb06b5e7e9d0ae408b348ee6de52f1b, type: 3}
+  emptyReloadCues:
+  - time: 0
+    clip: {fileID: 8300000, guid: c6f742db31059134183c51cbd9faf8a5, type: 3}
+  - time: 0.7
+    clip: {fileID: 8300000, guid: 5eb06b5e7e9d0ae408b348ee6de52f1b, type: 3}
+  equipCues:
+  - time: 0.018652853
+    clip: {fileID: 8300000, guid: e0ef6a3c6ccb1c14fa7993240ec8b8b4, type: 3}

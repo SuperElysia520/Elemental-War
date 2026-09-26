@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>绑定用户在 GamePVP 场景中制作的 GamePanel，不创建任何 HUD 图形或文本。</summary>
+/// <summary>绑定用户制作的 GamePanel，并补充退出对局入口。</summary>
 [DisallowMultipleComponent]
 public class PvpGameHudUI : MonoBehaviour
 {
@@ -29,9 +29,13 @@ public class PvpGameHudUI : MonoBehaviour
     private Image m_SelfHealthBar;
     private Text m_SelfHealthNumber;
     private Text m_RemainingBullets;
+    private Text m_ScopeDescription;
+    private Text m_WeaponName;
+    private Image m_WeaponIcon;
     private PvpPlayerCombat m_LocalPlayer;
     private int m_LastDisplayedBullets = -1;
     private float m_NextRosterRefreshTime;
+    private Button m_LeaveMatchButton;
 
     public static void AttachTo(GameObject gamePanel)
     {
@@ -58,6 +62,8 @@ public class PvpGameHudUI : MonoBehaviour
         m_SelfHealthNumber = GetText("SelfHealthBarPanel/HealthNumber");
         // WeaponPanel 是用户自行制作的可选面板；这里只按节点名读取，不创建或改动布局。
         m_RemainingBullets = GetText("WeaponPanel/RemainingBullets");
+        m_ScopeDescription = GetText("WeaponPanel/ScopeMagnification");
+        m_WeaponIcon = GetImage("WeaponPanel/WeaponIcon");
         BindTeammateRows();
 
         if (m_BlueProgressBar == null || m_BlueKillCount == null || m_TotalKillCount == null ||
@@ -75,6 +81,7 @@ public class PvpGameHudUI : MonoBehaviour
         SetScore(0, 0);
         SetSelfHealth(null);
         HideAllTeammateRows();
+        CreateLeaveMatchButton();
     }
 
     private void Update()
@@ -90,6 +97,44 @@ public class PvpGameHudUI : MonoBehaviour
         SetSelfHealth(m_LocalPlayer);
         UpdateTeammateRows();
         UpdateRemainingBullets();
+        if (m_LeaveMatchButton != null)
+            m_LeaveMatchButton.interactable = Cursor.lockState != CursorLockMode.Locked &&
+                LobbyManager.Instance != null && !LobbyManager.Instance.IsReturningToLobby;
+    }
+
+    private void CreateLeaveMatchButton()
+    {
+        var root = new GameObject("LeavePvpMatch", typeof(RectTransform), typeof(Image), typeof(Button));
+        root.transform.SetParent(transform, false);
+        var rect = root.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = rect.pivot = Vector2.one;
+        rect.anchoredPosition = new Vector2(-24f, -24f);
+        rect.sizeDelta = new Vector2(238f, 44f);
+        var background = root.GetComponent<Image>();
+        background.color = new Color(0.075f, 0.1f, 0.15f, 0.92f);
+        m_LeaveMatchButton = root.GetComponent<Button>();
+        m_LeaveMatchButton.targetGraphic = background;
+        m_LeaveMatchButton.interactable = false;
+        var textObject = new GameObject("Label", typeof(RectTransform), typeof(Text));
+        textObject.transform.SetParent(root.transform, false);
+        var labelRect = textObject.GetComponent<RectTransform>();
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = labelRect.offsetMax = Vector2.zero;
+        var label = textObject.GetComponent<Text>();
+        label.font = m_SelfHealthNumber.font;
+        label.fontSize = 18;
+        label.alignment = TextAnchor.MiddleCenter;
+        label.color = Color.white;
+        label.raycastTarget = false;
+        label.text = "退出对局（Esc 解锁鼠标）";
+        m_LeaveMatchButton.onClick.AddListener(() =>
+        {
+            if (LobbyManager.Instance == null || LobbyManager.Instance.IsReturningToLobby) return;
+            m_LeaveMatchButton.interactable = false;
+            label.text = "正在返回大厅…";
+            LobbyManager.Instance.LeaveRoom();
+        });
     }
 
     private Image GetImage(string path)
@@ -226,6 +271,39 @@ public class PvpGameHudUI : MonoBehaviour
     {
         if (m_RemainingBullets == null || m_LocalPlayer == null)
             return;
+
+        var loadout = m_LocalPlayer.GetComponent<PvpLoadoutCombat>();
+        if (loadout != null)
+        {
+            string text = loadout.IsReloading ? "换弹中" : loadout.CurrentAmmo + " / " + loadout.ReserveAmmo;
+            if (m_RemainingBullets.text != text) m_RemainingBullets.text = text;
+            var rig = m_LocalPlayer.GetComponent<PvpWeaponRig>();
+            var definition = loadout.ActiveDefinition;
+            if (m_ScopeDescription != null && definition != null && rig != null)
+            {
+                var sight = definition.GetSight(rig.ActiveSightId);
+                m_ScopeDescription.text = sight != null ? sight.displayName : "铁瞄";
+            }
+            if (m_WeaponIcon != null && m_WeaponName == null)
+            {
+                // The authored panel has a fixed AK silhouette. Use the actual equipped name in its existing rectangle.
+                m_WeaponIcon.enabled = false;
+                var labelObject = new GameObject("EquippedWeaponName", typeof(RectTransform), typeof(Text));
+                labelObject.transform.SetParent(m_WeaponIcon.transform, false);
+                m_WeaponName = labelObject.GetComponent<Text>();
+                m_WeaponName.rectTransform.anchorMin = Vector2.zero;
+                m_WeaponName.rectTransform.anchorMax = Vector2.one;
+                m_WeaponName.rectTransform.offsetMin = m_WeaponName.rectTransform.offsetMax = Vector2.zero;
+                m_WeaponName.font = m_RemainingBullets.font;
+                m_WeaponName.fontSize = 24;
+                m_WeaponName.color = Color.white;
+                m_WeaponName.alignment = TextAnchor.MiddleCenter;
+                m_WeaponName.raycastTarget = false;
+            }
+            if (m_WeaponName != null && definition != null)
+                m_WeaponName.text = definition.weaponId == 0 ? "突击步枪" : definition.weaponId == 1 ? "手枪" : "狙击枪";
+            return;
+        }
 
         PlayerNetworkSync networkSync = m_LocalPlayer.GetComponent<PlayerNetworkSync>();
         PlayerWeapon weapon = networkSync != null && networkSync.playerModel != null

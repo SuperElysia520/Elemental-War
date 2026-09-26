@@ -69,13 +69,17 @@ public class PlayerModel : MonoBehaviour, IStateMachineOwner
         animator = GetComponent<Animator>();
         cc = GetComponent<CharacterController>();
         navMeshAgent = GetComponent<NavMeshAgent>();
-        navMeshAgent.stoppingDistance = stoppingDistance;
-        navMeshAgent.angularSpeed = PlayerController.instance.rotationSpeed;
+        if (navMeshAgent != null)
+        {
+            navMeshAgent.stoppingDistance = stoppingDistance;
+            if (PlayerController.instance != null) navMeshAgent.angularSpeed = PlayerController.instance.rotationSpeed;
+        }
         rigBuilder = GetComponentInChildren<RigBuilder>();
     }
 
     void Start()
     {
+        if (GetComponent<PvpFullBodyController>() != null) return;
         SwitchState(PlayerState.Idle); // 默认切换待机状态
         ExitAim();
     }
@@ -218,6 +222,7 @@ public class PlayerModel : MonoBehaviour, IStateMachineOwner
 
     public void OnAnimatorMove()
     {
+        if (GetComponent<PvpFullBodyController>() != null) return;
         if (cc == null || !cc.enabled)
             return;
 
@@ -246,6 +251,7 @@ public class PlayerModel : MonoBehaviour, IStateMachineOwner
     /// </summary>
     public void EnterAim()
     {
+        if (GetComponent<PvpFullBodyController>() != null) return;
         // 启动瞄准约束
         rightHandAimConstraint.weight = 1;
         bodyAimConstraint.weight = 1;
@@ -257,6 +263,7 @@ public class PlayerModel : MonoBehaviour, IStateMachineOwner
     /// </summary>
     public void ExitAim()
     {
+        if (GetComponent<PvpFullBodyController>() != null) return;
         // 关闭瞄准约束
         rightHandAimConstraint.weight = 0;
         bodyAimConstraint.weight = 0;

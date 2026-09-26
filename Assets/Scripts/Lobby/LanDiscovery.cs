@@ -13,6 +13,7 @@ public class LanDiscovery : MonoBehaviour
 {
     public const int DiscoveryPort = 47777;
     public const int DedicatedDiscoveryPortOffset = 41000;
+    public const int AccountProtocolVersion = 2;
 
     // 广播/监听固定使用的标识头，用于过滤无关 UDP 包
     private const string MagicHeader = "FPS-LAN-DISC";
@@ -84,6 +85,7 @@ public class LanDiscovery : MonoBehaviour
         public bool hasRoom;   // Dedicated PVP：该服务器槽位是否已经创建房间
         public bool canCreate; // Dedicated PVP：该服务器槽位当前是否接受建房
         public string serverVersion; // Dedicated PVP：用于在连接前拦截不兼容客户端
+        public int accountProtocolVersion; // Old servers omit this field and deserialize as zero.
     }
 
     public class RoomEntry
@@ -100,6 +102,7 @@ public class LanDiscovery : MonoBehaviour
         public bool hasRoom;
         public bool canCreate;
         public string serverVersion;
+        public int accountProtocolVersion;
     }
 
     // ---- 房主侧 API ----
@@ -418,6 +421,7 @@ public class LanDiscovery : MonoBehaviour
                 hasRoom = m_DedicatedHasRoom,
                 canCreate = m_DedicatedCanCreate,
                 serverVersion = Application.version,
+                accountProtocolVersion = AccountProtocolVersion,
             };
             string json = JsonUtility.ToJson(payload);
             byte[] response = Encoding.UTF8.GetBytes(DedicatedResponseHeader + "|" + json);
@@ -514,7 +518,8 @@ public class LanDiscovery : MonoBehaviour
             entry.isDedicatedPvp != isDedicatedPvp ||
             entry.hasRoom != (isDedicatedPvp ? payload.hasRoom : true) ||
             entry.canCreate != (isDedicatedPvp && payload.canCreate) ||
-            entry.serverVersion != (isDedicatedPvp ? payload.serverVersion : string.Empty);
+            entry.serverVersion != (isDedicatedPvp ? payload.serverVersion : string.Empty) ||
+            entry.accountProtocolVersion != (isDedicatedPvp ? payload.accountProtocolVersion : 0);
 
         entry.roomName = payload.roomName;
         entry.currentPlayers = payload.currentPlayers;
@@ -530,6 +535,7 @@ public class LanDiscovery : MonoBehaviour
         entry.hasRoom = isDedicatedPvp ? payload.hasRoom : true;
         entry.canCreate = isDedicatedPvp && payload.canCreate;
         entry.serverVersion = isDedicatedPvp ? payload.serverVersion : string.Empty;
+        entry.accountProtocolVersion = isDedicatedPvp ? payload.accountProtocolVersion : 0;
 
         if (changed)
         {

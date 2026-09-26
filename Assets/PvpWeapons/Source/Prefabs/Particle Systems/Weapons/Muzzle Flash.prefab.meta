@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 9defeac88977c0d448aa4541073ee9e4
+labels:
+- Effect
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Particle Systems/Weapons/Muzzle Flash.prefab
+  uploadId: 943244

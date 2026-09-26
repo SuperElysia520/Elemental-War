@@ -1,0 +1,227 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 273ea820e26b4063ae2d6e9dfb2b6481, type: 3}
+  m_Name: AssaultRifle
+  m_EditorClassIdentifier: 
+  weaponId: 0
+  displayName: Assault Rifle_1
+  modelPrefab: {fileID: 7786648515979380528, guid: 690361918b5a9cc4dbbcfe8884ff7111,
+    type: 3}
+  automatic: 1
+  selectiveFire: 1
+  roundsPerMinute: 800
+  actionCycleDuration: 0
+  magazineCapacity: 30
+  reserveAmmo: 1000
+  keepChamberedRound: 1
+  reloadDuration: 1.925
+  emptyReloadDuration: 1.925
+  equipDuration: 1
+  muzzleVelocity: 550
+  gravity: 9.81
+  drag: 0.1
+  projectileLifetime: 5
+  hitRadius: 0.01
+  damage: 25
+  headDamageMultiplier: 2.5
+  limbDamageMultiplier: 1
+  range: 300
+  impactForce: 10
+  damageOverRange:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 0.01
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  aimDuration: 0.2
+  aimMovementMultiplier: 0.5
+  fireMovementMultiplier: 0.4
+  sights:
+  - sightId: 0
+    displayName: "\u673A\u7784"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 50
+    secondaryFieldOfView: 0
+    magnified: 0
+  - sightId: 1
+    displayName: "\u7EA2\u70B9 1"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 50
+    secondaryFieldOfView: 0
+    magnified: 0
+  - sightId: 2
+    displayName: "\u7EA2\u70B9 2"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 40
+    secondaryFieldOfView: 0
+    magnified: 0
+  - sightId: 3
+    displayName: "\u7EA2\u70B9 3"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 50
+    secondaryFieldOfView: 0
+    magnified: 0
+  - sightId: 4
+    displayName: "\u5168\u606F"
+    fieldOfView: 55
+    referenceWeaponFieldOfView: 45
+    secondaryFieldOfView: 0
+    magnified: 0
+  - sightId: 5
+    displayName: "8 \u500D\u955C"
+    fieldOfView: 15
+    referenceWeaponFieldOfView: 15
+    secondaryFieldOfView: 55
+    magnified: 1
+  hipSpray:
+    maxAmount: 6
+    passiveMultiplier: 0.3
+    rampUpTime: 0.5
+    recoveryTime: 0.1
+    autoFill: 1
+    loop: 1
+    points:
+    - {x: 0, y: 0}
+    - {x: -0.6636556, y: 0.71729016}
+    - {x: 0.5569388, y: 0.77276546}
+    - {x: -0.9355124, y: 0.3389073}
+    - {x: -0.55402863, y: -0.28197035}
+    - {x: 0.26511094, y: -0.5771684}
+    - {x: 0.33874926, y: 0.3333106}
+    - {x: -0.720673, y: 0.3070054}
+    - {x: 0.124689855, y: 0.6393783}
+    - {x: 0.1906023, y: 0.83664644}
+    - {x: 0.37650815, y: -0.61035013}
+    - {x: 0.1476089, y: 0.959766}
+    - {x: -0.16495943, y: -0.5270426}
+    - {x: -0.20430213, y: -0.3095098}
+    - {x: -0.06395438, y: 0.83048517}
+    - {x: -0.0056381472, y: 0.51420075}
+    - {x: -0.9200064, y: 0.28151804}
+    - {x: 0.60437757, y: -0.12462533}
+    - {x: -0.48081115, y: -0.015521643}
+    - {x: 0.28893307, y: -0.02482232}
+    - {x: 0.5145531, y: -0.59401536}
+  aimSpray:
+    maxAmount: 0.01
+    passiveMultiplier: 1
+    rampUpTime: 0.1
+    recoveryTime: 0.05
+    autoFill: 1
+    loop: 1
+    points:
+    - {x: 0, y: 0}
+    - {x: -0.620824, y: 0.25406605}
+    - {x: -0.10402059, y: -0.027538992}
+    - {x: 0.05227474, y: -0.16937831}
+    - {x: 0.48837143, y: 0.44187838}
+    - {x: -0.45493415, y: 0.5404727}
+    - {x: 0.014961552, y: -0.8600889}
+    - {x: -0.45413235, y: 0.8186551}
+    - {x: -0.17200013, y: -0.87399995}
+    - {x: 0.2281973, y: -0.87847054}
+    - {x: -0.4700377, y: -0.41816118}
+    - {x: 0.6224183, y: -0.07781594}
+  hipKick:
+    staticPosition: {x: 0, y: 0, z: -0.4}
+    staticRotation: {x: -14, y: 0, z: 0}
+    randomPosition: {x: 0, y: 0, z: 0}
+    randomRotation: {x: 5, y: 5, z: 37.95}
+    positionRoughness: 10
+    rotationRoughness: 10
+    springPosition: {x: 0, y: 0.01, z: -0.02}
+    springRotation: {x: -2, y: 0, z: 0}
+    springPositionSpeed: 10
+    springRotationSpeed: 20
+    springPositionFade: 1
+    springRotationFade: 0.7
+    springSpeedMultiplier: 1
+  aimKick:
+    staticPosition: {x: 0, y: 0, z: -0.3}
+    staticRotation: {x: -1, y: 0, z: 0}
+    randomPosition: {x: 0.005, y: 0.005, z: 0}
+    randomRotation: {x: 0, y: 1, z: 8.8}
+    positionRoughness: 12
+    rotationRoughness: 10
+    springPosition: {x: 0, y: 0.005, z: -0.01}
+    springRotation: {x: -1, y: 0, z: 0}
+    springPositionSpeed: 10
+    springRotationSpeed: 10
+    springPositionFade: 1
+    springRotationFade: 1
+    springSpeedMultiplier: 1
+  motion:
+    swayAmplification: 0.5
+    swaySmoothness: 5
+    swayPositionInput: 0.0005
+    swayRotationInput: 0.2
+    swayPositionLimit: 1
+    swayRotationLimit: 20
+    hipBreathPosition: {x: 0, y: 0.005, z: 0}
+    hipBreathRotation: {x: -0.68, y: 0, z: 1}
+    aimBreathPosition: {x: 0.0005, y: 0.001, z: 0}
+    aimBreathPositionFrequency: {x: 1.21, y: 1, z: 1}
+    aimBreathRotation: {x: -0.1, y: 0, z: 0}
+    walkPosition: {x: 0.00065, y: 0.00065, z: 0.00065}
+    walkPositionFrequency: {x: 1, y: 2, z: 2}
+    walkRotation: {x: 0.0455, y: 0, z: -0.39}
+    walkRotationFrequency: {x: 2, y: 1, z: 1}
+    sprintPosition: {x: -0.05, y: -0.06, z: -0.05}
+    sprintRotation: {x: 11.1, y: -16.49, z: 28.2}
+    sprintDuration: 0.25
+  cameraRecoil: 2
+  horizontalRecoil: 1
+  verticalRecoil: 0.3
+  cameraShakeAmount: 0.1
+  cameraShakeRoughness: 1
+  cameraShakeDuration: 0.3
+  fireClip: {fileID: 8300000, guid: b3a1b0f854d515b4798e653179fdaea9, type: 3}
+  reloadClip: {fileID: 0}
+  emptyReloadClip: {fileID: 0}
+  equipClip: {fileID: 0}
+  firePitch: 1.38
+  firePitchRandomness: 0.2
+  fireVolume: 1
+  reloadPitch: 1.25
+  audioMaxDistance: 200
+  fireCues: []
+  reloadCues:
+  - time: 0
+    clip: {fileID: 8300000, guid: b0d8c8961182aa34abc6f4221b489a65, type: 3}
+  - time: 1.1
+    clip: {fileID: 8300000, guid: d88085430c41eed4c8cb50f6acc95547, type: 3}
+  emptyReloadCues:
+  - time: 0
+    clip: {fileID: 8300000, guid: b0d8c8961182aa34abc6f4221b489a65, type: 3}
+  - time: 1.1
+    clip: {fileID: 8300000, guid: d88085430c41eed4c8cb50f6acc95547, type: 3}
+  equipCues:
+  - time: 0.09378237
+    clip: {fileID: 8300000, guid: 4ec054a2f96c312449d544ca90f6b9dd, type: 3}

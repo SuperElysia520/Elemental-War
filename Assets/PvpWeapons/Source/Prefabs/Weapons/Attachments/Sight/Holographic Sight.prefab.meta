@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 3fe9ff5d093b4c947ae69377b1ed9270
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Weapons/Attachments/Sight/Holographic
+    Sight.prefab
+  uploadId: 943244

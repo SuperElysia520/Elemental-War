@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 21087934ed795984d9839b7810e03269
+labels:
+- Effect
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Particle Systems/Weapons/Muzzle Smoke.prefab
+  uploadId: 943244

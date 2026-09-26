@@ -1,0 +1,129 @@
+{
+  "weapons": [
+    {
+      "definitionJson": "{\"weaponId\":0,\"displayName\":\"Assault Rifle_1\",\"automatic\":true,\"selectiveFire\":true,\"roundsPerMinute\":800,\"magazineCapacity\":30,\"reserveAmmo\":1000,\"keepChamberedRound\":true,\"reloadDuration\":1.925,\"emptyReloadDuration\":1.925,\"equipDuration\":0.35,\"muzzleVelocity\":550,\"gravity\":9.81,\"drag\":0.1,\"projectileLifetime\":5,\"hitRadius\":0.01,\"damage\":25,\"range\":300,\"impactForce\":10,\"aimDuration\":0.2,\"aimMovementMultiplier\":0.5,\"fireMovementMultiplier\":0.4,\"hipSpray\":{\"maxAmount\":6,\"passiveMultiplier\":0.3,\"rampUpTime\":0.5,\"recoveryTime\":0.1,\"autoFill\":true,\"loop\":true,\"points\":[{\"x\":0,\"y\":0},{\"x\":-0.6636556,\"y\":0.71729016},{\"x\":0.5569388,\"y\":0.77276546},{\"x\":-0.9355124,\"y\":0.3389073},{\"x\":-0.55402863,\"y\":-0.28197035},{\"x\":0.26511094,\"y\":-0.5771684},{\"x\":0.33874926,\"y\":0.3333106},{\"x\":-0.720673,\"y\":0.3070054},{\"x\":0.124689855,\"y\":0.6393783},{\"x\":0.1906023,\"y\":0.83664644},{\"x\":0.37650815,\"y\":-0.61035013},{\"x\":0.1476089,\"y\":0.959766},{\"x\":-0.16495943,\"y\":-0.5270426},{\"x\":-0.20430213,\"y\":-0.3095098},{\"x\":-0.06395438,\"y\":0.83048517},{\"x\":-0.0056381472,\"y\":0.51420075},{\"x\":-0.9200064,\"y\":0.28151804},{\"x\":0.60437757,\"y\":-0.12462533},{\"x\":-0.48081115,\"y\":-0.015521643},{\"x\":0.28893307,\"y\":-0.02482232},{\"x\":0.5145531,\"y\":-0.59401536}]},\"aimSpray\":{\"maxAmount\":0.01,\"passiveMultiplier\":1,\"rampUpTime\":0.1,\"recoveryTime\":0.05,\"autoFill\":true,\"loop\":true,\"points\":[{\"x\":0,\"y\":0},{\"x\":-0.620824,\"y\":0.25406605},{\"x\":-0.10402059,\"y\":-0.027538992},{\"x\":0.05227474,\"y\":-0.16937831},{\"x\":0.48837143,\"y\":0.44187838},{\"x\":-0.45493415,\"y\":0.5404727},{\"x\":0.014961552,\"y\":-0.8600889},{\"x\":-0.45413235,\"y\":0.8186551},{\"x\":-0.17200013,\"y\":-0.87399995},{\"x\":0.2281973,\"y\":-0.87847054},{\"x\":-0.4700377,\"y\":-0.41816118},{\"x\":0.6224183,\"y\":-0.07781594}]},\"hipKick\":{\"staticPosition\":{\"x\":0,\"y\":0,\"z\":-0.4},\"staticRotation\":{\"x\":-14,\"y\":0,\"z\":0},\"randomPosition\":{\"x\":0,\"y\":0,\"z\":0},\"randomRotation\":{\"x\":5,\"y\":5,\"z\":37.95},\"positionRoughness\":10,\"rotationRoughness\":10,\"springPosition\":{\"x\":0,\"y\":0.01,\"z\":-0.02},\"springPositionSpeed\":10,\"springPositionFade\":1,\"springRotation\":{\"x\":-2,\"y\":0,\"z\":0},\"springRotationSpeed\":20,\"springRotationFade\":0.7},\"aimKick\":{\"staticPosition\":{\"x\":0,\"y\":0,\"z\":-0.3},\"staticRotation\":{\"x\":-1,\"y\":0,\"z\":0},\"randomPosition\":{\"x\":0.005,\"y\":0.005,\"z\":0},\"randomRotation\":{\"x\":0,\"y\":1,\"z\":8.8},\"positionRoughness\":12,\"rotationRoughness\":10,\"springPosition\":{\"x\":0,\"y\":0.005,\"z\":-0.01},\"springPositionSpeed\":10,\"springPositionFade\":1,\"springRotation\":{\"x\":-1,\"y\":0,\"z\":0},\"springRotationSpeed\":10,\"springRotationFade\":1},\"cameraRecoil\":2,\"horizontalRecoil\":1,\"verticalRecoil\":0.3,\"cameraShakeAmount\":0.1,\"cameraShakeRoughness\":1,\"cameraShakeDuration\":0.3,\"firePitch\":1.38,\"firePitchRandomness\":0.2,\"fireVolume\":1,\"audioMaxDistance\":200,\"reloadPitch\":1.25}",
+      "resourceName": "AssaultRifle",
+      "sourcePrefab": "Assets/PvpWeapons/Source/Prefabs/Weapons/Assault Rifle_1.prefab",
+      "animatedFbx": "Assets/PvpWeapons/Source/Art/Models/Weapons/Assault Rifle_1/Assault Rifle_1 Animated.fbx",
+      "casingPrefab": "Assets/PvpWeapons/Source/Prefabs/Weapons/Casing/5mm Casing.prefab",
+      "fireClip": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Assult Rifle_1/Assault Rifle_1 Fire.wav",
+      "reloadClip": "",
+      "emptyReloadClip": "",
+      "reloadCues": [
+        {
+          "time": 0,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag Out.wav"
+        },
+        {
+          "time": 1.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag In.wav"
+        }
+      ],
+      "emptyReloadCues": [
+        {
+          "time": 0,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag Out.wav"
+        },
+        {
+          "time": 1.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag In.wav"
+        }
+      ],
+      "equipClip": "",
+      "equipCues": [
+        {
+          "time": 0.09378237,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Assult Rifle_1/Assault Rifle_1  Equip.wav"
+        }
+      ],
+      "fireCues": []
+    },
+    {
+      "definitionJson": "{\"weaponId\":1,\"displayName\":\"Pistol_1\",\"automatic\":false,\"selectiveFire\":false,\"roundsPerMinute\":1000,\"magazineCapacity\":12,\"reserveAmmo\":200,\"keepChamberedRound\":true,\"reloadDuration\":2,\"emptyReloadDuration\":2,\"equipDuration\":0.35,\"muzzleVelocity\":250,\"gravity\":9.81,\"drag\":0.1,\"projectileLifetime\":5,\"hitRadius\":0.01,\"damage\":31,\"range\":200,\"impactForce\":15,\"aimDuration\":0.2,\"aimMovementMultiplier\":0.5,\"fireMovementMultiplier\":0.4,\"hipSpray\":{\"maxAmount\":6,\"passiveMultiplier\":0.3,\"rampUpTime\":0.5,\"recoveryTime\":0.1,\"autoFill\":true,\"loop\":true,\"points\":[{\"x\":0,\"y\":0},{\"x\":-0.6636556,\"y\":0.71729016},{\"x\":0.5569388,\"y\":0.77276546},{\"x\":-0.9355124,\"y\":0.3389073},{\"x\":-0.55402863,\"y\":-0.28197035},{\"x\":0.26511094,\"y\":-0.5771684},{\"x\":0.33874926,\"y\":0.3333106},{\"x\":-0.720673,\"y\":0.3070054},{\"x\":0.124689855,\"y\":0.6393783},{\"x\":0.1906023,\"y\":0.83664644},{\"x\":0.37650815,\"y\":-0.61035013},{\"x\":0.1476089,\"y\":0.959766},{\"x\":-0.16495943,\"y\":-0.5270426},{\"x\":-0.20430213,\"y\":-0.3095098},{\"x\":-0.06395438,\"y\":0.83048517},{\"x\":-0.0056381472,\"y\":0.51420075},{\"x\":-0.9200064,\"y\":0.28151804},{\"x\":0.60437757,\"y\":-0.12462533},{\"x\":-0.48081115,\"y\":-0.015521643},{\"x\":0.28893307,\"y\":-0.02482232},{\"x\":0.5145531,\"y\":-0.59401536}]},\"aimSpray\":{\"maxAmount\":0.5,\"passiveMultiplier\":0.097,\"rampUpTime\":0.1,\"recoveryTime\":0.05,\"autoFill\":true,\"loop\":true,\"points\":[{\"x\":0,\"y\":0},{\"x\":0.24193001,\"y\":-0.5503968},{\"x\":-0.08786958,\"y\":0.85341215},{\"x\":-0.10396494,\"y\":-0.85982555},{\"x\":0.27685174,\"y\":0.12537676},{\"x\":-0.23073094,\"y\":-0.30676046},{\"x\":-0.10816398,\"y\":-0.68633217},{\"x\":-0.30224034,\"y\":-0.92183036},{\"x\":-0.60973096,\"y\":0.3413104},{\"x\":-0.1630117,\"y\":0.36919972},{\"x\":0.3470416,\"y\":-0.053765245},{\"x\":0.44522497,\"y\":-0.40834308},{\"x\":0.29836717,\"y\":-0.6963988},{\"x\":-0.79341966,\"y\":0.2214429},{\"x\":-0.5446102,\"y\":-0.09019563},{\"x\":-0.5241545,\"y\":-0.10305558},{\"x\":0.30947796,\"y\":0.59467405},{\"x\":0.58800006,\"y\":0.065999754}]},\"hipKick\":{\"staticPosition\":{\"x\":0,\"y\":0,\"z\":-0.5},\"staticRotation\":{\"x\":-25,\"y\":25,\"z\":0},\"randomPosition\":{\"x\":0,\"y\":0,\"z\":0},\"randomRotation\":{\"x\":-25,\"y\":7,\"z\":0},\"positionRoughness\":10,\"rotationRoughness\":25,\"springPosition\":{\"x\":0,\"y\":0.02,\"z\":-0.02},\"springPositionSpeed\":10,\"springPositionFade\":1,\"springRotation\":{\"x\":-3,\"y\":0,\"z\":0},\"springRotationSpeed\":20,\"springRotationFade\":0.7},\"aimKick\":{\"staticPosition\":{\"x\":0,\"y\":0,\"z\":-0.1},\"staticRotation\":{\"x\":-15,\"y\":15,\"z\":0},\"randomPosition\":{\"x\":0,\"y\":0,\"z\":0},\"randomRotation\":{\"x\":-15,\"y\":7,\"z\":0},\"positionRoughness\":10,\"rotationRoughness\":25,\"springPosition\":{\"x\":0,\"y\":0.007,\"z\":-0.01},\"springPositionSpeed\":10,\"springPositionFade\":1,\"springRotation\":{\"x\":-2,\"y\":0.08,\"z\":0},\"springRotationSpeed\":20,\"springRotationFade\":0.7},\"cameraRecoil\":5,\"horizontalRecoil\":0.7,\"verticalRecoil\":0.1,\"cameraShakeAmount\":0.1,\"cameraShakeRoughness\":1,\"cameraShakeDuration\":0.2,\"firePitch\":1,\"firePitchRandomness\":0.24,\"fireVolume\":1,\"audioMaxDistance\":150,\"reloadPitch\":0.97}",
+      "resourceName": "Pistol",
+      "sourcePrefab": "Assets/PvpWeapons/Source/Prefabs/Weapons/Pistol_1.prefab",
+      "animatedFbx": "Assets/PvpWeapons/Source/Art/Models/Weapons/Pistol_1/Pistol_1 Animated.fbx",
+      "casingPrefab": "Assets/PvpWeapons/Source/Prefabs/Weapons/Casing/9mm Casing.prefab",
+      "fireClip": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Pistol_1/Pistol_1 Fire.wav",
+      "reloadClip": "",
+      "emptyReloadClip": "",
+      "reloadCues": [
+        {
+          "time": 0,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Pistol_1/Pistol_1 Mag In.wav"
+        },
+        {
+          "time": 0.7,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Pistol_1/Pistol_1 Mag Out.wav"
+        }
+      ],
+      "emptyReloadCues": [
+        {
+          "time": 0,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Pistol_1/Pistol_1 Mag In.wav"
+        },
+        {
+          "time": 0.7,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Pistol_1/Pistol_1 Mag Out.wav"
+        }
+      ],
+      "equipClip": "",
+      "equipCues": [
+        {
+          "time": 0.018652853,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Pistol_1/Pistol_1 Equip.wav"
+        }
+      ],
+      "fireCues": []
+    },
+    {
+      "definitionJson": "{\"weaponId\":2,\"displayName\":\"Sniper_1\",\"automatic\":false,\"selectiveFire\":false,\"roundsPerMinute\":500,\"magazineCapacity\":5,\"reserveAmmo\":200,\"keepChamberedRound\":true,\"reloadDuration\":1.56,\"emptyReloadDuration\":1.56,\"equipDuration\":0.35,\"muzzleVelocity\":800,\"gravity\":9.81,\"drag\":0.1,\"projectileLifetime\":5,\"hitRadius\":0.01,\"damage\":112,\"range\":700,\"impactForce\":30,\"aimDuration\":0.2,\"aimMovementMultiplier\":0.5,\"fireMovementMultiplier\":0.4,\"hipSpray\":{\"maxAmount\":6,\"passiveMultiplier\":0.3,\"rampUpTime\":0.5,\"recoveryTime\":0.1,\"autoFill\":true,\"loop\":true,\"points\":[{\"x\":0,\"y\":0},{\"x\":-0.6636556,\"y\":0.71729016},{\"x\":0.5569388,\"y\":0.77276546},{\"x\":-0.9355124,\"y\":0.3389073},{\"x\":-0.55402863,\"y\":-0.28197035},{\"x\":0.26511094,\"y\":-0.5771684},{\"x\":0.33874926,\"y\":0.3333106},{\"x\":-0.720673,\"y\":0.3070054},{\"x\":0.124689855,\"y\":0.6393783},{\"x\":0.1906023,\"y\":0.83664644},{\"x\":0.37650815,\"y\":-0.61035013},{\"x\":0.1476089,\"y\":0.959766},{\"x\":-0.16495943,\"y\":-0.5270426},{\"x\":-0.20430213,\"y\":-0.3095098},{\"x\":-0.06395438,\"y\":0.83048517},{\"x\":-0.0056381472,\"y\":0.51420075},{\"x\":-0.9200064,\"y\":0.28151804},{\"x\":0.60437757,\"y\":-0.12462533},{\"x\":-0.48081115,\"y\":-0.015521643},{\"x\":0.28893307,\"y\":-0.02482232},{\"x\":0.5145531,\"y\":-0.59401536}]},\"aimSpray\":{\"maxAmount\":0.01,\"passiveMultiplier\":1,\"rampUpTime\":0.1,\"recoveryTime\":0.05,\"autoFill\":true,\"loop\":true,\"points\":[{\"x\":0,\"y\":0},{\"x\":-0.620824,\"y\":0.25406605},{\"x\":-0.10402059,\"y\":-0.027538992},{\"x\":0.05227474,\"y\":-0.16937831},{\"x\":0.48837143,\"y\":0.44187838},{\"x\":-0.45493415,\"y\":0.5404727},{\"x\":0.014961552,\"y\":-0.8600889},{\"x\":-0.45413235,\"y\":0.8186551},{\"x\":-0.17200013,\"y\":-0.87399995},{\"x\":0.2281973,\"y\":-0.87847054},{\"x\":-0.4700377,\"y\":-0.41816118},{\"x\":0.6224183,\"y\":-0.07781594}]},\"hipKick\":{\"staticPosition\":{\"x\":0,\"y\":0.15,\"z\":-1.5},\"staticRotation\":{\"x\":-38.95,\"y\":0,\"z\":41.71},\"randomPosition\":{\"x\":0,\"y\":0,\"z\":0},\"randomRotation\":{\"x\":5,\"y\":5,\"z\":37.95},\"positionRoughness\":6.8,\"rotationRoughness\":10,\"springPosition\":{\"x\":0,\"y\":0.02,\"z\":-0.04},\"springPositionSpeed\":10,\"springPositionFade\":1,\"springRotation\":{\"x\":-4,\"y\":0,\"z\":0},\"springRotationSpeed\":15,\"springRotationFade\":0.7},\"aimKick\":{\"staticPosition\":{\"x\":0,\"y\":0,\"z\":-1.5},\"staticRotation\":{\"x\":0,\"y\":0,\"z\":0},\"randomPosition\":{\"x\":0.01,\"y\":0.01,\"z\":0},\"randomRotation\":{\"x\":0.01,\"y\":0.01,\"z\":14},\"positionRoughness\":10,\"rotationRoughness\":10,\"springPosition\":{\"x\":0,\"y\":0,\"z\":-0.04},\"springPositionSpeed\":10,\"springPositionFade\":1,\"springRotation\":{\"x\":-1,\"y\":0,\"z\":0},\"springRotationSpeed\":15,\"springRotationFade\":0.73},\"cameraRecoil\":6,\"horizontalRecoil\":1,\"verticalRecoil\":1,\"cameraShakeAmount\":1.5,\"cameraShakeRoughness\":0.72,\"cameraShakeDuration\":0.3,\"firePitch\":1,\"firePitchRandomness\":0.1,\"fireVolume\":1,\"audioMaxDistance\":300,\"reloadPitch\":1.27}",
+      "resourceName": "Sniper",
+      "sourcePrefab": "Assets/PvpWeapons/Source/Prefabs/Weapons/Sniper_1.prefab",
+      "animatedFbx": "Assets/PvpWeapons/Source/Art/Models/Weapons/Sniper_1/Sniper_1 Animated.fbx",
+      "casingPrefab": "Assets/PvpWeapons/Source/Prefabs/Weapons/Casing/7.62mm Casing.prefab",
+      "fireClip": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Fire.wav",
+      "reloadClip": "",
+      "emptyReloadClip": "",
+      "reloadCues": [
+        {
+          "time": 0.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag Out.wav"
+        },
+        {
+          "time": 1.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag In.wav"
+        }
+      ],
+      "emptyReloadCues": [
+        {
+          "time": 0.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag Out.wav"
+        },
+        {
+          "time": 1.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Mag In.wav"
+        }
+      ],
+      "equipClip": "",
+      "equipCues": [
+        {
+          "time": 0.018652853,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Equip.wav"
+        }
+      ],
+      "fireCues": [
+        {
+          "time": 0.1,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Bolt Pull.wav"
+        },
+        {
+          "time": 0.5,
+          "path": "Assets/PvpWeapons/Source/Art/Audio/Weapons/Sniper_1/Sniper_1 Bolt Push.wav"
+        }
+      ]
+    }
+  ],
+  "sourceProject": "Test-FPS",
+  "sourceScene": "Assets/Akila/FPS Framework/Scenes/Demo.unity"
+}

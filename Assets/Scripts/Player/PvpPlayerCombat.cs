@@ -201,7 +201,7 @@ public class PvpPlayerCombat : NetworkBehaviour
         Vector3 requestedDirection,
         PlayerWeapon weapon)
     {
-        if (shooter == null || weapon == null || !shooter.IsServer)
+        if (shooter == null || weapon == null || !shooter.IsServer || shooter.GetComponent<PvpLoadoutCombat>() != null)
             return;
 
         LobbyManager lobbyManager = LobbyManager.Instance;
@@ -451,6 +451,12 @@ public class PvpPlayerCombat : NetworkBehaviour
             m_RespawnCoroutine = StartCoroutine(RespawnAfterDelay());
     }
 
+    public void ApplyProjectileDamage(PvpPlayerCombat attacker, float damage, bool headshot, Vector3 hitPoint, Vector3 direction)
+    {
+        if (!IsServer || attacker == null || attacker == this || !attacker.IsSpawned) return;
+        ApplyServerDamage(attacker, damage, headshot, hitPoint, direction);
+    }
+
     [ClientRpc]
     private void ShowHitFeedbackClientRpc(Vector3 hitPoint, Vector3 shotDirection, bool isHeadshot)
     {
@@ -614,6 +620,8 @@ public class PvpPlayerCombat : NetworkBehaviour
         if (wasEnabled)
             characterController.enabled = false;
         transform.SetPositionAndRotation(position, rotation);
+        var fullBody = GetComponent<PvpFullBodyController>();
+        if (fullBody != null) fullBody.ResetView(rotation);
         if (wasEnabled)
             characterController.enabled = true;
     }
@@ -659,6 +667,13 @@ public class PvpPlayerCombat : NetworkBehaviour
     {
         if (!IsOwner)
             return;
+
+        var fullBody = GetComponent<PvpFullBodyController>();
+        if (fullBody != null)
+        {
+            fullBody.SetControlEnabled(controlEnabled);
+            return;
+        }
 
         PlayerController controller = PlayerController.instance;
         if (controller != null && m_NetworkSync != null &&

@@ -37,7 +37,7 @@ public static class PvpDedicatedServerBuilder
             options = BuildOptions.None,
         };
 
-        BuildReport report = BuildPipeline.BuildPlayer(options);
+        BuildReport report = BuildWithAccountTransport(options, false);
         if (report.summary.result == BuildResult.Succeeded)
             Debug.Log("[PVP Client] 构建完成：" + outputPath + "，大小=" + report.summary.totalSize + " bytes。");
         else
@@ -78,7 +78,7 @@ public static class PvpDedicatedServerBuilder
             options = BuildOptions.Development,
         };
 
-        BuildReport report = BuildPipeline.BuildPlayer(options);
+        BuildReport report = BuildWithAccountTransport(options, true);
         if (report.summary.result == BuildResult.Succeeded)
         {
             WriteServerLauncherScripts(target, outputPath);
@@ -138,6 +138,19 @@ public static class PvpDedicatedServerBuilder
         Debug.LogError("[Dedicated PVP] " + message.Replace("\n", " "));
         EditorUtility.DisplayDialog("缺少 Dedicated Server 构建模块", message, "确定");
         return false;
+    }
+
+    private static BuildReport BuildWithAccountTransport(BuildPlayerOptions options, bool server)
+    {
+        var previousHttpOption = PlayerSettings.insecureHttpOption;
+        try
+        {
+            // Production clients use HTTPS; the same-machine dedicated server redeems tickets over loopback HTTP.
+            // AccountServiceSettings still rejects non-loopback HTTP independently of the Unity player setting.
+            PlayerSettings.insecureHttpOption = server ? InsecureHttpOption.AlwaysAllowed : InsecureHttpOption.NotAllowed;
+            return BuildPipeline.BuildPlayer(options);
+        }
+        finally { PlayerSettings.insecureHttpOption = previousHttpOption; AssetDatabase.SaveAssets(); }
     }
 
     private static void WriteServerLauncherScripts(BuildTarget target, string outputPath)

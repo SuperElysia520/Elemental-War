@@ -31,8 +31,8 @@ public class MainMenuUI : UIBase<MainMenuUI>
             SceneManager.LoadScene("Game");
         });
         btnRead.onClick.AddListener(ShowTipMenu);
-        btnCharacter.onClick.AddListener(ShowTipMenu);
-        btnClothes.onClick.AddListener(ShowTipMenu);
+        btnCharacter.onClick.AddListener(ShowCharacterMenu);
+        btnClothes.onClick.AddListener(ShowCharacterMenu);
         btnSettings.onClick.AddListener(ShowTipMenu);
         btnAchievements.onClick.AddListener(ShowTipMenu);
         btnAuthor.onClick.AddListener(ShowTipMenu);
@@ -74,10 +74,24 @@ public class MainMenuUI : UIBase<MainMenuUI>
 
     private void ShowPVPLobbyMenu()
     {
+        if (!AccountClient.EnsureInstance().IsAuthenticated)
+        {
+            ShowCharacterMenu();
+            return;
+        }
         Exit(() => // 主菜单先播放FadeOut
         {
             LobbyMenuUI.instance.Enter(LobbyGameMode.PVP); // 进入仅显示 PVP 房间的团队大厅
             btnExit.gameObject.SetActive(false); // 隐藏退出按钮
+        });
+    }
+
+    private void ShowCharacterMenu()
+    {
+        Exit(() =>
+        {
+            btnExit.gameObject.SetActive(false);
+            CharacterCustomizationUI.Show(() => { Enter(); btnExit.gameObject.SetActive(true); });
         });
     }
 

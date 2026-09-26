@@ -28,13 +28,17 @@ public struct LobbyPlayerData : INetworkSerializable, IEquatable<LobbyPlayerData
     public FixedString64Bytes PlayerName;
     public LobbyTeam Team;
     public byte CharacterIndex;
+    public CharacterAppearanceData Appearance;
+    public PvpLoadoutData Loadout;
 
     public LobbyPlayerData(ulong clientId, string playerName, LobbyTeam team)
     {
         ClientId = clientId;
         PlayerName = new FixedString64Bytes(playerName);
         Team = team;
-        CharacterIndex = byte.MaxValue;
+        CharacterIndex = 0;
+        Appearance = CharacterAppearanceData.Default;
+        Loadout = PvpLoadoutData.Default;
     }
 
     public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -45,6 +49,8 @@ public struct LobbyPlayerData : INetworkSerializable, IEquatable<LobbyPlayerData
         byte teamValue = (byte)Team;
         serializer.SerializeValue(ref teamValue);
         serializer.SerializeValue(ref CharacterIndex);
+        serializer.SerializeValue(ref Appearance);
+        serializer.SerializeValue(ref Loadout);
         if (serializer.IsReader)
             Team = (LobbyTeam)teamValue;
     }
@@ -52,7 +58,7 @@ public struct LobbyPlayerData : INetworkSerializable, IEquatable<LobbyPlayerData
     public bool Equals(LobbyPlayerData other)
     {
         return ClientId == other.ClientId && PlayerName.Equals(other.PlayerName) &&
-               Team == other.Team && CharacterIndex == other.CharacterIndex;
+               Team == other.Team && CharacterIndex == other.CharacterIndex && Appearance.Equals(other.Appearance) && Loadout.Equals(other.Loadout);
     }
 }
 
@@ -62,7 +68,7 @@ public struct LobbyPlayerData : INetworkSerializable, IEquatable<LobbyPlayerData
 public class LobbyState : NetworkBehaviour
 {
     public const int PvpTeamCapacity = 5;
-    public const int PvpCharacterCount = 3;
+    public const int PvpCharacterCount = 1;
     public const int PvpKillTarget = 40;
     public const ulong NoRoomOwner = ulong.MaxValue;
 
@@ -182,12 +188,14 @@ public class LobbyState : NetworkBehaviour
     }
 
     /// <summary>PVP 专用添加成员接口。</summary>
-    public void AddPvpPlayer(ulong clientId, string playerName)
+    public void AddPvpPlayer(ulong clientId, string playerName, PlayerProfileData profile = null)
     {
         if (!IsServer || FindPlayerIndex(clientId) >= 0)
             return;
 
-        PvpPlayers.Add(new LobbyPlayerData(clientId, SanitizePlayerName(playerName), LobbyTeam.None));
+        var player = new LobbyPlayerData(clientId, SanitizePlayerName(playerName), LobbyTeam.None);
+        if (profile != null) { player.Appearance = profile.appearance.Sanitized(); player.Loadout = profile.loadout.Sanitized(); }
+        PvpPlayers.Add(player);
     }
 
     /// <summary>PVP 专用移除成员接口。</summary>

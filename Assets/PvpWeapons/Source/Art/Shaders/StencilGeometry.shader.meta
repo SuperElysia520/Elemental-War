@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 4ef53bc8c1b1c2f4aa326bae475cf9a3
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Art/Shaders/StencilGeometry.shader
+  uploadId: 943244

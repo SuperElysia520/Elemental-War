@@ -1,0 +1,10 @@
+bin/
+obj/
+Tests/bin/
+Tests/obj/
+data/
+test-results/
+publish/
+*.user
+!*.csproj
+!Tests/*.csproj

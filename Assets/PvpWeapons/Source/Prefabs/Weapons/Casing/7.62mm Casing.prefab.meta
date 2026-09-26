@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: af363bf468502534bb337f607f39a75d
+labels:
+- Casing
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Weapons/Casing/7.62mm Casing.prefab
+  uploadId: 943244

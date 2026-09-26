@@ -35,6 +35,13 @@ public class PlayerNetworkSync : NetworkBehaviour
         if (playerModel == null)
             playerModel = GetComponent<PlayerModel>();
 
+        if (GetComponent<PvpFullBodyController>() != null)
+        {
+            if (playerModel != null) playerModel.Stop();
+            SetupPvpTeammateNameplate();
+            return;
+        }
+
         animator = playerModel != null && playerModel.animator != null
             ? playerModel.animator
             : GetComponent<Animator>();
@@ -71,6 +78,8 @@ public class PlayerNetworkSync : NetworkBehaviour
     {
         if (!m_PvpNameplateResolved)
             SetupPvpTeammateNameplate();
+
+        if (GetComponent<PvpFullBodyController>() != null) return;
 
         if (animator == null || !IsSpawned)
             return;
@@ -181,6 +190,7 @@ public class PlayerNetworkSync : NetworkBehaviour
         Vector3 visualTarget,
         ServerRpcParams rpcParams = default)
     {
+        if (GetComponent<PvpLoadoutCombat>() != null) return;
         LobbyState lobby = LobbyManager.Instance != null ? LobbyManager.Instance.CurrentLobby : null;
         if (lobby != null && lobby.GameMode == LobbyGameMode.PVP)
         {

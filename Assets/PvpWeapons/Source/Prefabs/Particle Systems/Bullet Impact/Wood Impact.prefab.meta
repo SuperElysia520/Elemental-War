@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: beb3acff7ab73944fb8f470f24d74ed3
+labels:
+- Effect
+PrefabImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 290322
+  packageName: FPS Framework Pro 2.0
+  packageVersion: 2.2.6
+  assetPath: Assets/Akila/FPS Framework/Prefabs/Particle Systems/Bullet Impact/Wood
+    Impact.prefab
+  uploadId: 943244
