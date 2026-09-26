@@ -75,6 +75,9 @@ public class PlayerWeapon : MonoBehaviour
     /// <summary>最近一次射击的真实射线起点，供 PVP 服务器复核命中。</summary>
     public Vector3 LastShotOrigin { get; private set; }
 
+    /// <summary>最近一次真实射线的终点，供本地与远端曳光从枪口汇聚到同一落点。</summary>
+    public Vector3 LastShotVisualTarget { get; private set; }
+
     /// <summary>实际发射时触发（联机同步壳订阅后广播给远端）。参数：子弹生成位置、发射方向。</summary>
     public event Action<Vector3, Vector3> onFire;
 
@@ -115,6 +118,33 @@ public class PlayerWeapon : MonoBehaviour
     /// <returns>本次是否真正发射（受发射间隔限制）。调用方据此决定是否播放开火视觉/抖动。</returns>
     public bool Fire(Vector3 origin, Vector3 direction, float spreadDegrees = 0f)
     {
+        return Fire(origin, direction, origin, spreadDegrees);
+    }
+
+    /// <summary>
+    /// 命中射线和视觉曳光使用不同起点。PVP 的真实判定从相机准星射线出发，
+    /// 第一人称曳光仍从 viewmodel 枪口生成，避免贴脸时枪口越过目标命中面。
+    /// </summary>
+    public bool Fire(
+        Vector3 hitOrigin,
+        Vector3 hitDirection,
+        Vector3 visualOrigin,
+        float spreadDegrees)
+    {
+        return Fire(hitOrigin, hitDirection, visualOrigin, spreadDegrees, false);
+    }
+
+    /// <summary>
+    /// PVP 可让视觉曳光从枪口汇聚到真实准心射线的终点；伤害仍从相机中心射线判定，
+    /// 避免近距离因为相机与枪口存在视差而出现“准心命中、曳光从旁边飞过”。
+    /// </summary>
+    public bool Fire(
+        Vector3 hitOrigin,
+        Vector3 hitDirection,
+        Vector3 visualOrigin,
+        float spreadDegrees,
+        bool convergeVisualToHitPoint)
+    {
         if (IsReloading || CurrentAmmo <= 0)
             return false;
 
@@ -127,14 +157,22 @@ public class PlayerWeapon : MonoBehaviour
         if (CurrentAmmo <= 0)
             StopLocalSustainedFire();
 
-        direction = ApplySpread(direction.normalized, spreadDegrees);
-        LastShotOrigin = origin;
+        Vector3 direction = ApplySpread(hitDirection.normalized, spreadDegrees);
+        LastShotOrigin = hitOrigin;
 
-        PerformHitscan(origin, direction);
+        LastShotVisualTarget = PerformHitscan(hitOrigin, direction);
+        Vector3 visualDirection = direction;
+        if (convergeVisualToHitPoint)
+        {
+            Vector3 toHitPoint = LastShotVisualTarget - visualOrigin;
+            if (toHitPoint.sqrMagnitude > 0.000001f)
+                visualDirection = toHitPoint.normalized;
+        }
+
         // 真实伤害已由射线立即判定，子弹预制体只作为曳光视觉。
-        SpawnVisual(origin, direction);
+        SpawnVisual(visualOrigin, visualDirection);
         // 广播给远端时用第三人称枪口位置，让远端在自己屏幕上看子弹从该角色枪口飞出
-        onFire?.Invoke(bulletSpawnPoint != null ? bulletSpawnPoint.position : origin, direction);
+        onFire?.Invoke(bulletSpawnPoint != null ? bulletSpawnPoint.position : visualOrigin, direction);
         return true;
     }
 
@@ -305,10 +343,12 @@ public class PlayerWeapon : MonoBehaviour
         return spreadRotation * Vector3.forward;
     }
 
-    private void PerformHitscan(Vector3 origin, Vector3 direction)
+    private Vector3 PerformHitscan(Vector3 origin, Vector3 direction)
     {
         if (ownerModel == null)
             ownerModel = GetComponentInParent<PlayerModel>();
+
+        Vector3 traceEnd = origin + direction * range;
 
         int hitCount = Physics.RaycastNonAlloc(
             origin,
@@ -335,19 +375,22 @@ public class PlayerWeapon : MonoBehaviour
         }
 
         if (!hasHit)
-            return;
+            return traceEnd;
+
+        traceEnd = nearestHit.point;
 
         DamageHitbox hitbox = nearestHit.collider.GetComponent<DamageHitbox>();
         EnemyBase enemy = hitbox != null
             ? hitbox.Enemy
             : nearestHit.collider.GetComponentInParent<EnemyBase>();
         if (enemy == null)
-            return;
+            return traceEnd;
 
         float multiplier = hitbox != null
             ? hitbox.damageMultiplier
             : CalculateFallbackDamageMultiplier(nearestHit.collider, nearestHit.point);
         enemy.Hurt(damage * multiplier, nearestHit.point, direction);
+        return traceEnd;
     }
 
     private float CalculateFallbackDamageMultiplier(Collider hitCollider, Vector3 hitPoint)

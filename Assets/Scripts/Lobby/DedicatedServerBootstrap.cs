@@ -4,7 +4,7 @@ using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Dedicated Server 构建进入 GameStart 后自动启动 NGO Server。
-/// 普通客户端不会执行；开发阶段可给普通构建添加 -dedicatedPvpServer 参数模拟服务器进程。
+/// 普通客户端和编辑器 Play 模式默认不会执行；开发阶段可添加 -dedicatedPvpServer 参数模拟服务器进程。
 /// </summary>
 public static class DedicatedServerBootstrap
 {
@@ -42,7 +42,7 @@ public static class DedicatedServerBootstrap
 
     private static bool ShouldRunDedicatedServer()
     {
-#if UNITY_SERVER
+#if UNITY_SERVER && !UNITY_EDITOR
         return true;
 #else
         string[] arguments = Environment.GetCommandLineArgs();

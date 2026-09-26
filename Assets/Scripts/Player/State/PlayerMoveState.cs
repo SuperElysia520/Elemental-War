@@ -34,12 +34,12 @@ public class PlayerMoveState : PlayerStateBase
 
     public override void Update()
     {
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Move)
             return;
 
         base.Update();
 
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Move)
             return;
 
         // 检测是否被玩家控制

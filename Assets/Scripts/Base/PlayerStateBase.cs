@@ -55,7 +55,9 @@ public class PlayerStateBase : StateBase
         #region 瞄准状态监听
         // 瞄准状态在待机或者运动状态都可以进行瞄准所以写在状态基类
         // 只有右键开镜才进入 Aiming；左键腰射由 PlayerController 独立处理。
-        if (IsBeControl() && playerController.isAiming)
+        // 悬空时保持 Hover 状态；第一人称枪模仍由 PlayerController 独立保持 ADS。
+        // 否则 Aiming 与 Hover 会逐帧互相切换并重复触发开镜表现。
+        if (IsBeControl() && playerController.isAiming && playerModel.cc.isGrounded)
         {
             playerModel.SwitchState(PlayerState.Aiming);
         }

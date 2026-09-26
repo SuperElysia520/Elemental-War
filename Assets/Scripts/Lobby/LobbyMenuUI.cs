@@ -376,7 +376,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
         int respondingServers = Discovery.DedicatedPvpServerCount;
         SetStatus(respondingServers == 0
-            ? "无法创建 PVP 房间：服务器未响应，请确认5个服务器进程和查询端口已启动"
+            ? "无法创建 PVP 房间：服务器未响应，请确认服务器进程和查询端口已启动"
             : "无法创建 PVP 房间：所有服务器槽位都已被占用");
         if (btnCreateRoom != null)
             btnCreateRoom.interactable = CanInteract;

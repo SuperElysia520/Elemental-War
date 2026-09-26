@@ -15,12 +15,12 @@ public class PlayerIdleState : PlayerStateBase
 
     public override void Update()
     {
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Idle)
             return;
 
         base.Update();
 
-        if (!CanUpdate)
+        if (!CanUpdate || playerModel.CurrentState != PlayerState.Idle)
             return;
 
         // 检测是否被玩家控制
