@@ -37,7 +37,7 @@ public class LobbyManager : MonoBehaviour
 
     [Tooltip("同时开放的 PVP 房间槽位数量；需要启动相同数量、不同端口的服务器进程。")]
     [Range(1, 20)]
-    public int dedicatedServerRoomCount = 5;
+    public int dedicatedServerRoomCount = 1;
 
     [Header("广播")]
     public LanDiscovery discovery;

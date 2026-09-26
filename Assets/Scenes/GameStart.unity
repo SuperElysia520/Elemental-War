@@ -3591,9 +3591,9 @@ MonoBehaviour:
     type: 3}
   maxPlayers: 3
   pvpMaxPlayers: 10
-  dedicatedServerAddress: 47.108.170.58
+  dedicatedServerAddress: 114.66.59.53
   dedicatedServerPort: 7777
-  dedicatedServerRoomCount: 5
+  dedicatedServerRoomCount: 1
   discovery: {fileID: 638794295}
   playerName: "\u9B4F\u8FB0\u5E74"
   playerPrefabResourcePaths:

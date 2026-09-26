@@ -7,7 +7,7 @@ using UnityEngine;
 public static class PvpDedicatedServerBuilder
 {
     private const int ServerStartPort = 7777;
-    private const int ServerRoomCount = 5;
+    private const int ServerRoomCount = 1;
 
     private static readonly string[] ServerScenes =
     {
@@ -15,12 +15,41 @@ public static class PvpDedicatedServerBuilder
         "Assets/Scenes/GamePVP.unity",
     };
 
+    private static readonly string[] ClientScenes =
+    {
+        "Assets/Scenes/GameStart.unity",
+        "Assets/Scenes/GamePVP.unity",
+        "Assets/Scenes/GamePVE.unity",
+    };
+
+    [MenuItem("Tools/PVP Dedicated Server/Build Windows Client")]
+    public static void BuildWindowsClient()
+    {
+        const string outputPath = "Builds/RainyunTrial/Client/FPS.exe";
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath));
+
+        var options = new BuildPlayerOptions
+        {
+            scenes = ClientScenes,
+            locationPathName = outputPath,
+            target = BuildTarget.StandaloneWindows64,
+            subtarget = (int)StandaloneBuildSubtarget.Player,
+            options = BuildOptions.None,
+        };
+
+        BuildReport report = BuildPipeline.BuildPlayer(options);
+        if (report.summary.result == BuildResult.Succeeded)
+            Debug.Log("[PVP Client] 构建完成：" + outputPath + "，大小=" + report.summary.totalSize + " bytes。");
+        else
+            Debug.LogError("[PVP Client] 构建失败：" + report.summary.result + "。请查看 Unity Build 日志。");
+    }
+
     [MenuItem("Tools/PVP Dedicated Server/Build Windows Server")]
     public static void BuildWindowsServer()
     {
         BuildServer(
             BuildTarget.StandaloneWindows64,
-            "Builds/PvpServer/Windows/FPS_PVP_Server.exe");
+            "Builds/RainyunTrial/Server/FPS_PVP_Server.exe");
     }
 
     [MenuItem("Tools/PVP Dedicated Server/Build Linux Server")]
@@ -54,7 +83,8 @@ public static class PvpDedicatedServerBuilder
         {
             WriteServerLauncherScripts(target, outputPath);
             Debug.Log("[Dedicated PVP] 构建完成：" + outputPath +
-                      "，大小=" + report.summary.totalSize + " bytes。已生成5房间启动脚本。");
+                      "，大小=" + report.summary.totalSize + " bytes。已生成" +
+                      ServerRoomCount + "房间启动脚本。");
         }
         else
         {
@@ -144,8 +174,9 @@ public static class PvpDedicatedServerBuilder
                 "taskkill /IM \"" + executableName + "\" /F\r\n" +
                 "echo All PVP server processes have been stopped.\r\n";
 
-            File.WriteAllText(Path.Combine(directory, "Start_5_PVP_Servers.bat"), startScript, utf8WithoutBom);
-            File.WriteAllText(Path.Combine(directory, "Stop_5_PVP_Servers.bat"), stopScript, utf8WithoutBom);
+            string roomSuffix = ServerRoomCount == 1 ? "1_PVP_Server" : ServerRoomCount + "_PVP_Servers";
+            File.WriteAllText(Path.Combine(directory, "Start_" + roomSuffix + ".bat"), startScript, utf8WithoutBom);
+            File.WriteAllText(Path.Combine(directory, "Stop_" + roomSuffix + ".bat"), stopScript, utf8WithoutBom);
             return;
         }
 
@@ -172,8 +203,9 @@ public static class PvpDedicatedServerBuilder
                 "  rm -f \"$pid_file\"\n" +
                 "fi\n";
 
-            File.WriteAllText(Path.Combine(directory, "start_5_pvp_servers.sh"), startScript, utf8WithoutBom);
-            File.WriteAllText(Path.Combine(directory, "stop_5_pvp_servers.sh"), stopScript, utf8WithoutBom);
+            string roomSuffix = ServerRoomCount == 1 ? "1_pvp_server" : ServerRoomCount + "_pvp_servers";
+            File.WriteAllText(Path.Combine(directory, "start_" + roomSuffix + ".sh"), startScript, utf8WithoutBom);
+            File.WriteAllText(Path.Combine(directory, "stop_" + roomSuffix + ".sh"), stopScript, utf8WithoutBom);
         }
     }
 }
