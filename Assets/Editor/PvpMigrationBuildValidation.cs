@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -13,6 +12,7 @@ public static class PvpMigrationBuildValidation
     private static void Build(bool server)
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode) throw new InvalidOperationException("Exit Play Mode before building.");
+        string[] scenes = GameFlowBuildScenes.Get(server);
         PvpRifleGirlPrefabBuilder.Validate();
         PvpWeaponAssetBuilder.Validate();
         var previousSubtarget = EditorUserBuildSettings.standaloneBuildSubtarget;
@@ -27,7 +27,7 @@ public static class PvpMigrationBuildValidation
             PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
             var options = new BuildPlayerOptions
             {
-                scenes = EditorBuildSettings.scenes.Where(s => s.enabled && (!server || !s.path.EndsWith("GamePVE.unity"))).Select(s => s.path).ToArray(),
+                scenes = scenes,
                 locationPathName = output,
                 target = BuildTarget.StandaloneWindows64,
                 subtarget = (int)(server ? StandaloneBuildSubtarget.Server : StandaloneBuildSubtarget.Player),

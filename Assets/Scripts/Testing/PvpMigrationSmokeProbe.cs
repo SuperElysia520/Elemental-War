@@ -300,7 +300,7 @@ public sealed class PvpMigrationSmokeProbe : MonoBehaviour
         Phase(90, "respawn-verified");
         yield return WaitPeer(90, 20);
         lobby.LeaveRoom();
-        yield return WaitFor(() => SceneManager.GetActiveScene().name == "GameStart" &&
+        yield return WaitFor(() => SceneManager.GetActiveScene().name == GameFlowScenes.MultiplayerLobby &&
             NetworkManager.Singleton != null && !NetworkManager.Singleton.IsListening, 20, "leave-match-to-lobby");
         Require(account.IsAuthenticated && account.Profile.appearance.Equals(expectedAppearance) && account.Profile.loadout.Equals(expectedLoadout),
             "account-survives-match-exit", "Returning to the lobby preserves the authenticated account and saved profile.");

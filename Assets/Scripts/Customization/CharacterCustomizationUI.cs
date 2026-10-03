@@ -8,13 +8,17 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
 {
     private static CharacterCustomizationUI current;
     private AccountClient account;
+    private LobbyManager boundLobby;
     private CharacterAppearanceData appearance;
     private PvpLoadoutData loadout;
     private Action onClose;
     private Font font;
     private Text status, accountLabel;
+    private Text returnButtonLabel;
+    private string returnLabel = "返回大厅";
     private InputField username, password;
-    private Button saveButton;
+    private Button saveButton, loginButton, registerButton, logoutButton, reloadButton;
+    private bool cloudActionsWereLocked;
     private GameObject previewRoot;
     private RifleGirlAppearance preview;
     private RenderTexture previewTexture;
@@ -25,12 +29,20 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private readonly string[] outfits = { "外套裙装", "裙装", "运动装" };
     private readonly string[] sights = { "铁瞄", "红点 1", "红点 2", "红点 3", "全息瞄具", "8 倍镜" };
 
-    public static void Show(Action closed = null)
+    public static void Show(Action closed = null, string returnButtonText = "返回大厅")
     {
-        if (current != null) { current.gameObject.SetActive(true); return; }
+        if (current != null)
+        {
+            current.onClose = closed;
+            current.returnLabel = returnButtonText;
+            if (current.returnButtonLabel != null) current.returnButtonLabel.text = returnButtonText;
+            current.gameObject.SetActive(true);
+            return;
+        }
         var go = new GameObject("CharacterCustomization", typeof(RectTransform));
         current = go.AddComponent<CharacterCustomizationUI>();
         current.onClose = closed;
+        current.returnLabel = returnButtonText;
         current.Build();
     }
 
@@ -39,6 +51,8 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         account = AccountClient.EnsureInstance();
         account.StateChanged += RefreshStatus;
         account.ProfileChanged += ReceiveProfile;
+        boundLobby = LobbyManager.Instance;
+        if (boundLobby != null) boundLobby.OnLobbyChanged += RefreshStatus;
         appearance = account.Profile != null ? account.Profile.appearance : CharacterAppearanceData.Default;
         loadout = account.Profile != null ? account.Profile.loadout : PvpLoadoutData.Default;
         font = Font.CreateDynamicFontFromOSFont(new[] { "Microsoft YaHei", "Noto Sans CJK SC", "Arial" }, 22);
@@ -52,7 +66,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         gameObject.AddComponent<GraphicRaycaster>();
         Panel(transform, "Background", new Vector2(0, 0), new Vector2(1, 1), new Color(0.035f, 0.05f, 0.085f, 0.99f));
         Label(transform, "RIFLEGIRL / 角色与配装", 42, 40, 1050, 56, 30, new Color(0.88f, 0.94f, 1f));
-        Button(transform, "返回大厅", 1360, 40, 196, 48, Close);
+        returnButtonLabel = Button(transform, returnLabel, 1360, 40, 196, 48, Close).GetComponentInChildren<Text>();
 
         var left = Panel(transform, "Options", new Vector2(0, 0), new Vector2(0, 0), new Color(0.075f, 0.1f, 0.15f));
         Place(left.rectTransform, 42, 118, 550, 682);
@@ -85,10 +99,10 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         accountLabel = Label(right.transform, "", 24, 74, 380, 64, 20, new Color(0.62f, 0.8f, 0.94f));
         username = Input(right.transform, "用户名", 24, 155, false);
         password = Input(right.transform, "密码", 24, 221, true);
-        Button(right.transform, "登录", 24, 291, 181, 46, () => Authenticate(false));
-        Button(right.transform, "注册", 221, 291, 181, 46, () => Authenticate(true));
-        Button(right.transform, "退出账号", 24, 355, 378, 42, () => { if (!dirty) account.Logout(); else status.text = "请先保存更改，或返回大厅放弃本次编辑。"; });
-        Button(right.transform, "重新载入云端档案", 24, 407, 378, 42, ReloadProfile);
+        loginButton = Button(right.transform, "登录", 24, 291, 181, 46, () => Authenticate(false));
+        registerButton = Button(right.transform, "注册", 221, 291, 181, 46, () => Authenticate(true));
+        logoutButton = Button(right.transform, "退出账号", 24, 355, 378, 42, Logout);
+        reloadButton = Button(right.transform, "重新载入云端档案", 24, 407, 378, 42, ReloadProfile);
         Label(right.transform, "用户名：3–24 位字母、数字或下划线\n密码：10–128 位\n保存后，开局和重生使用此配装。", 24, 461, 378, 90, 17, new Color(0.62f, 0.7f, 0.81f));
         saveButton = Button(right.transform, "保存到账号", 24, 565, 378, 62, Save);
         status = Label(transform, "", 44, 823, 1278, 52, 20, new Color(0.64f, 0.82f, 0.98f));
@@ -160,10 +174,17 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private static void SetLayer(Transform root, int layer) { root.gameObject.layer = layer; foreach (Transform child in root) SetLayer(child, layer); }
     private void Authenticate(bool register)
     {
+        if (!AllowCloudAction()) return;
         if (account.IsBusy) return;
         Action<bool, string> done = (ok, message) => { if (this == null) return; password.text = ""; status.text = ok ? "已登录，已载入云端档案。" : message; };
         if (register) account.Register(username.text.Trim(), password.text, done);
         else account.Login(username.text.Trim(), password.text, done);
+    }
+    private void Logout()
+    {
+        if (!AllowCloudAction() || account.IsBusy) return;
+        if (!dirty) account.Logout();
+        else status.text = "请先保存更改，或点击返回放弃本次编辑。";
     }
     private void ReceiveProfile(PlayerProfileData profile)
     {
@@ -186,11 +207,13 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     }
     private void Save()
     {
+        if (!AllowCloudAction()) return;
         if (!account.IsAuthenticated) { status.text = "请先注册或登录账号。"; return; }
         account.SaveProfile(appearance, loadout, (ok, message) => { if (this != null) status.text = ok ? "外观与配装已保存到云端。" : message; });
     }
     private void ReloadProfile()
     {
+        if (!AllowCloudAction()) return;
         if (!account.IsAuthenticated || account.IsBusy) return;
         if (dirty && !reloadOnNextClick)
         {
@@ -204,11 +227,44 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     {
         if (accountLabel == null) return;
         accountLabel.text = account.IsAuthenticated ? "已登录：" + account.Profile.username : "登录后保存角色，换电脑也能恢复。";
-        if (!string.IsNullOrEmpty(account.LastError)) status.text = account.LastError;
-        saveButton.interactable = account.IsAuthenticated && !account.IsBusy;
-        saveButton.GetComponentInChildren<Text>().text = account.IsBusy ? "正在同步…" : (dirty ? "保存更改到账号" : "保存到账号");
+        bool cloudAllowed = CanModifyCloudProfile(out string lockMessage);
+        if (!cloudAllowed) status.text = lockMessage;
+        else if (!string.IsNullOrEmpty(account.LastError)) status.text = account.LastError;
+        else if (cloudActionsWereLocked)
+            status.text = dirty ? "开局检查已结束，可继续保存更改或返回放弃。" : "开局检查已结束，可继续编辑角色与配装。";
+        cloudActionsWereLocked = !cloudAllowed;
+        bool canRequest = cloudAllowed && !account.IsBusy;
+        saveButton.interactable = account.IsAuthenticated && canRequest;
+        loginButton.interactable = registerButton.interactable = canRequest;
+        logoutButton.interactable = reloadButton.interactable = account.IsAuthenticated && canRequest;
+        saveButton.GetComponentInChildren<Text>().text = !cloudAllowed ? "开局期间暂不可保存" : account.IsBusy ? "正在同步…" : (dirty ? "保存更改到账号" : "保存到账号");
         foreach (var choice in choices) choice.interactable = !account.IsBusy;
         foreach (var binding in bindings) binding.label.text = binding.value();
+    }
+    private bool AllowCloudAction()
+    {
+        if (CanModifyCloudProfile(out string message)) return true;
+        status.text = message;
+        return false;
+    }
+    private static bool CanModifyCloudProfile(out string message)
+    {
+        LobbyState state = LobbyManager.Instance != null ? LobbyManager.Instance.CurrentLobby : null;
+        if (state != null && state.GameMode == LobbyGameMode.PVP)
+        {
+            if (state.PvpIsPreparingMatch.Value)
+            {
+                message = "正在确认全员开局配装，暂时不能保存或切换账号。未保存搭配仍可试穿或返回放弃。";
+                return false;
+            }
+            if (state.IsStarted.Value)
+            {
+                message = "对局正在开始，请在返回大厅后保存角色或切换账号。";
+                return false;
+            }
+        }
+        message = "";
+        return true;
     }
     private void Close()
     {
@@ -226,6 +282,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private void OnDestroy()
     {
         if (account != null) { account.StateChanged -= RefreshStatus; account.ProfileChanged -= ReceiveProfile; }
+        if (boundLobby != null) boundLobby.OnLobbyChanged -= RefreshStatus;
         if (previewRoot != null) Destroy(previewRoot);
         if (previewTexture != null) { previewTexture.Release(); Destroy(previewTexture); }
         if (font != null) Destroy(font);

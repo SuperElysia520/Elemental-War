@@ -82,6 +82,11 @@ public class LobbyManager : MonoBehaviour
     [Tooltip("同队相邻出生点的水平间距")]
     public float pvpSpawnSpacing = 1.5f;
 
+    [Header("PVP 结算")]
+    [Tooltip("胜负确定后显示结算的秒数；结束后全员回 GameLobby，并保留原房间。")]
+    [Min(1f)]
+    public float pvpSettlementDuration = 8f;
+
     [Tooltip("基地内部的本地坐标中心。基地根节点不在建筑中心，当前地图安全中心约为 (13.65, -8.80, 2.65)。")]
     public Vector3 pvpBaseLocalSpawnCenter = new Vector3(13.65f, -8.80f, 2.65f);
 
@@ -101,7 +106,8 @@ public class LobbyManager : MonoBehaviour
     public bool IsHost => NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost;
     public bool IsInLobby => m_IsInLobby;
     public bool IsConnecting => m_IsConnecting;
-    public bool IsReturningToLobby => m_IsReturningToLobby;
+    public bool IsReturningToLobby => m_IsReturningToLobby || m_IsPvpMatchReturning;
+    public bool IsLocalPvpProfileSyncInProgress => m_LocalProfileRefreshRoutine != null || m_LocalProfileValidationPending;
     public bool IsDedicatedPvpServer => m_IsDedicatedPvpServer;
     public bool IsDedicatedPvpSession => m_IsDedicatedPvpSession;
     public bool CanManageRoom
@@ -138,6 +144,19 @@ public class LobbyManager : MonoBehaviour
     private bool m_IsReturningToLobby;
     private bool m_IsApplicationQuitting;
     private int m_ConnectionAttempt;
+    private AccountClient m_ProfileAccount;
+    private string m_LocalPvpAccountId;
+    private Coroutine m_LocalProfileRefreshRoutine;
+    private bool m_LocalProfileRefreshRequested;
+    private bool m_LocalProfileValidationPending;
+    private int m_LocalProfileRequestId;
+    private int m_LocalStartPreparationId;
+    private int m_PvpStartPreparationId;
+    private Coroutine m_PvpStartPreparationRoutine;
+    private string m_PvpStartPreparationError;
+    private readonly HashSet<ulong> m_PvpStartWaitingClients = new HashSet<ulong>();
+    private readonly HashSet<ulong> m_PvpStartParticipants = new HashSet<ulong>();
+    private readonly Dictionary<ulong, int> m_ProfileValidationRequests = new Dictionary<ulong, int>();
     private readonly Dictionary<ulong, PlayerProfileData> m_ClientProfiles = new Dictionary<ulong, PlayerProfileData>();
     private readonly Dictionary<ulong, NetworkManager.ConnectionApprovalResponse> m_AuthenticatingClients =
         new Dictionary<ulong, NetworkManager.ConnectionApprovalResponse>();
@@ -165,7 +184,14 @@ public class LobbyManager : MonoBehaviour
     private bool m_IsDedicatedPvpServer;
     private bool m_IsDedicatedPvpSession;
     private bool m_IsDedicatedRoomResetting;
+    private bool m_IsPvpMatchLoading;
+    private bool m_IsPvpMatchReturning;
+    private bool m_DedicatedLobbyReturnLoadPending;
+    private Coroutine m_DedicatedLobbyReturnRoutine;
     private bool m_NetworkCallbacksRegistered;
+    private NetworkSceneManager m_ClientNetworkSceneManager;
+    private bool m_IsClientPvpSceneLoading;
+    private bool m_PvpDisconnectedDuringLoad;
     private ulong m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
     private string m_PendingRoomName;
     private LobbyGameMode m_PendingRoomMode = LobbyGameMode.PVE;
@@ -198,6 +224,7 @@ public class LobbyManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        UnbindLocalPvpProfile();
         if (m_IsReturningToLobby && !m_IsApplicationQuitting)
             LogPvpReturnState("owner-destroyed-during-return");
         RemoveNetworkCallbacks();
@@ -218,6 +245,29 @@ public class LobbyManager : MonoBehaviour
     }
 
     private void OnApplicationQuit() => m_IsApplicationQuitting = true;
+
+    private void Update()
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        LobbyState lobby = CurrentLobby;
+        if (!m_IsDedicatedPvpServer || networkManager == null || !networkManager.IsServer ||
+            lobby == null || !lobby.IsSpawned || !lobby.IsPvpMatchOver || m_IsDedicatedRoomResetting ||
+            SceneManager.GetActiveScene().name != GameFlowScenes.PvpMatch)
+            return;
+
+        double now = networkManager.ServerTime.Time;
+        if (lobby.PvpReturnToLobbyAtServerTime.Value == 0d)
+        {
+            float duration = float.IsNaN(pvpSettlementDuration) || float.IsInfinity(pvpSettlementDuration)
+                ? 8f : Mathf.Max(1f, pvpSettlementDuration);
+            lobby.BeginPvpSettlement(now + duration);
+        }
+        if (lobby.HasPvpSettlementCountdown && now >= lobby.PvpReturnToLobbyAtServerTime.Value)
+        {
+            m_IsPvpMatchReturning = true;
+            RequestDedicatedReturnToLobby();
+        }
+    }
 
     public void SetBrowsingGameMode(LobbyGameMode gameMode)
     {
@@ -275,6 +325,12 @@ public class LobbyManager : MonoBehaviour
     /// <summary>由 DedicatedServerBootstrap 调用；服务器启动后保持空闲，直到首位玩家请求创建 PVP 房间。</summary>
     public bool StartDedicatedPvpServer(int portOverride = 0)
     {
+        if (SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby ||
+            !GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MultiplayerLobby, out _))
+        {
+            Debug.LogError("[Dedicated PVP] 必须先载入已制作且加入 Build Settings 的 GameLobby 场景，再启动服务器。");
+            return false;
+        }
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager == null || networkManager.IsListening)
             return false;
@@ -294,6 +350,7 @@ public class LobbyManager : MonoBehaviour
         ResetSessionCollections();
         m_IsDedicatedPvpServer = true;
         m_IsDedicatedPvpSession = true;
+
         m_IsInLobby = false;
         m_IsDedicatedRoomResetting = false;
         m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
@@ -564,6 +621,8 @@ public class LobbyManager : MonoBehaviour
         out string message)
     {
         message = string.Empty;
+        if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MultiplayerLobby, out message))
+            return false;
         AccountClient account = AccountClient.EnsureInstance();
         if (!account.IsAuthenticated) { message = "请先在角色页面登录账号。"; return false; }
         if (m_IsConnecting || m_RequestingTicket) { message = "正在验证账号并连接，请稍候。"; return false; }
@@ -598,6 +657,8 @@ public class LobbyManager : MonoBehaviour
         m_ActiveGameMode = LobbyGameMode.PVP;
         m_IsDedicatedPvpServer = false;
         m_IsDedicatedPvpSession = true;
+        m_LocalPvpAccountId = account.Profile.accountId;
+        m_PvpDisconnectedDuringLoad = false;
 
         transport.SetConnectionData(serverAddress.Trim(), port);
         ConfigureNetworkForLobby(networkManager, usesAccountApproval: true);
@@ -778,11 +839,84 @@ public class LobbyManager : MonoBehaviour
             return;
         }
 
-        if (!TryStartGameOnServer(out string message))
-            Debug.LogWarning("[Dedicated PVP] 开局请求被拒绝：" + message);
+        if (!ValidateStartConditions(out string message))
+        {
+            CurrentLobby.SendStartGameResult(requesterClientId, message);
+            return;
+        }
+        if (m_PvpStartPreparationRoutine != null)
+        {
+            CurrentLobby.SendStartGameResult(requesterClientId, "全员角色与配装正在验证，请稍候。");
+            return;
+        }
+        LobbyState lobby = CurrentLobby;
+        int preparationId = ++m_PvpStartPreparationId;
+        m_PvpStartPreparationError = null;
+        m_PvpStartWaitingClients.Clear();
+        m_PvpStartParticipants.Clear();
+        foreach (LobbyPlayerData player in lobby.GetPlayers())
+        {
+            m_PvpStartWaitingClients.Add(player.ClientId);
+            m_PvpStartParticipants.Add(player.ClientId);
+        }
+        lobby.PvpIsPreparingMatch.Value = true;
+        m_PvpStartPreparationRoutine = StartCoroutine(PreparePvpMatchProfiles(lobby, preparationId, requesterClientId));
+        lobby.SendStartGameResult(requesterClientId, "正在验证全员最新角色与配装…");
+        lobby.PrepareMatchProfilesClientRpc(preparationId);
     }
 
-    private bool ValidateStartConditions(out string message)
+    public void DisplayServerStartGameResult(string message)
+    {
+        ConnectionStatus = message;
+        OnLobbyChanged?.Invoke();
+    }
+
+    private IEnumerator PreparePvpMatchProfiles(LobbyState lobby, int preparationId, ulong requesterClientId)
+    {
+        yield return null;
+        float timeoutAt = Time.realtimeSinceStartup + 90f;
+        try
+        {
+            while (CurrentLobby == lobby && lobby != null && lobby.IsSpawned &&
+                   m_PvpStartWaitingClients.Count > 0 && string.IsNullOrEmpty(m_PvpStartPreparationError) &&
+                   Time.realtimeSinceStartup < timeoutAt && !m_IsApplicationQuitting)
+                yield return null;
+            if (m_IsApplicationQuitting || CurrentLobby != lobby || lobby == null || !lobby.IsSpawned)
+                yield break;
+            string message = m_PvpStartPreparationError;
+            if (string.IsNullOrEmpty(message) && m_PvpStartWaitingClients.Count > 0)
+                message = "全员角色与配装验证超时，开局已取消。请重新登录或加入房间后重试。";
+            if (string.IsNullOrEmpty(message))
+                TryStartGameOnServer(out message, preparationComplete: true);
+            ulong recipient = lobby.IsRoomOwner(requesterClientId) ? requesterClientId : lobby.RoomOwnerClientId.Value;
+            NetworkManager networkManager = NetworkManager.Singleton;
+            if (networkManager != null && networkManager.ConnectedClients.ContainsKey(recipient))
+                lobby.SendStartGameResult(recipient, message);
+        }
+        finally
+        {
+            if (lobby != null && lobby.IsSpawned && !m_IsApplicationQuitting)
+            {
+                lobby.PvpIsPreparingMatch.Value = false;
+                lobby.CancelMatchPreparationClientRpc(preparationId);
+            }
+            m_PvpStartWaitingClients.Clear();
+            m_PvpStartParticipants.Clear();
+            m_PvpStartPreparationRoutine = null;
+        }
+    }
+
+    public void HandlePvpMatchPreparationFailure(ulong clientId, int preparationId, string error)
+    {
+        if (!m_IsDedicatedPvpServer || CurrentLobby == null || !CurrentLobby.PvpIsPreparingMatch.Value ||
+            preparationId != m_PvpStartPreparationId || !m_PvpStartWaitingClients.Contains(clientId))
+            return;
+        string detail = string.IsNullOrWhiteSpace(error) ? "账号或档案验证失败。" : error;
+        if (detail.Length > 240) detail = detail.Substring(0, 240);
+        m_PvpStartPreparationError = "有玩家的角色与配装验证失败，开局已取消：" + detail;
+    }
+
+    private bool ValidateStartConditions(out string message, bool preparationComplete = false)
     {
         message = string.Empty;
         if (CurrentLobby == null)
@@ -793,6 +927,23 @@ public class LobbyManager : MonoBehaviour
         if (CurrentLobby.IsStarted.Value)
         {
             message = "对局已经开始";
+            return false;
+        }
+        if (m_IsDedicatedRoomResetting || m_IsPvpMatchLoading)
+        {
+            message = "场景正在切换，请稍后再开始游戏";
+            return false;
+        }
+        if (CurrentLobby.PvpIsPreparingMatch.Value && !preparationComplete)
+        {
+            message = "全员角色与配装正在验证，请稍候";
+            return false;
+        }
+        if (CurrentLobby.GameMode == LobbyGameMode.PVP &&
+            (m_ProfileValidationRequests.Count > 0 || IsLocalPvpProfileSyncInProgress ||
+             (!m_IsDedicatedPvpServer && AccountClient.Instance != null && AccountClient.Instance.IsBusy)))
+        {
+            message = "角色或配装正在同步，请同步完成后再开始游戏";
             return false;
         }
 
@@ -823,7 +974,7 @@ public class LobbyManager : MonoBehaviour
         return true;
     }
 
-    private bool TryStartGameOnServer(out string message)
+    private bool TryStartGameOnServer(out string message, bool preparationComplete = false)
     {
         message = string.Empty;
         NetworkManager networkManager = NetworkManager.Singleton;
@@ -832,7 +983,7 @@ public class LobbyManager : MonoBehaviour
             message = "只有服务器可以执行场景切换";
             return false;
         }
-        if (!ValidateStartConditions(out message))
+        if (!ValidateStartConditions(out message, preparationComplete))
             return false;
 
         if (networkManager.SceneManager == null)
@@ -844,14 +995,19 @@ public class LobbyManager : MonoBehaviour
         LobbyGameMode gameMode = CurrentLobby.GameMode;
         m_ActiveGameMode = gameMode;
         string sceneName = GetGameSceneName(gameMode);
+        if (!GameFlowScenes.TryValidateSceneAvailable(sceneName, out message))
+            return false;
 
         // PVE 保持原有顺序：先锁定房间，再请求进入 GamePVE。
         if (gameMode == LobbyGameMode.PVE)
             CurrentLobby.SetStarted(true);
 
+        if (gameMode == LobbyGameMode.PVP)
+            m_IsPvpMatchLoading = true;
         SceneEventProgressStatus status = networkManager.SceneManager.LoadScene(sceneName, LoadSceneMode.Single);
         if (status != SceneEventProgressStatus.Started)
         {
+            m_IsPvpMatchLoading = false;
             message = "场景切换失败：" + status;
             return false;
         }
@@ -950,6 +1106,11 @@ public class LobbyManager : MonoBehaviour
     {
         LobbyGameMode requestedMode = (LobbyGameMode)payload.gameMode;
         ConnectionOperation operation = (ConnectionOperation)payload.operation;
+        if (m_IsDedicatedRoomResetting || SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby)
+        {
+            RejectConnection(response, "服务器正在切换场景，请稍后重试");
+            return;
+        }
         if (!string.Equals(payload.clientVersion, Application.version, StringComparison.Ordinal))
         {
             string clientVersion = string.IsNullOrWhiteSpace(payload.clientVersion)
@@ -989,9 +1150,9 @@ public class LobbyManager : MonoBehaviour
                 RejectConnection(response, "当前还没有 PVP 房间，请先创建房间");
                 return;
             }
-            if (CurrentLobby.IsStarted.Value)
+            if (CurrentLobby.IsStarted.Value || CurrentLobby.PvpIsPreparingMatch.Value)
             {
-                RejectConnection(response, "对局进行中");
+                RejectConnection(response, "对局已开始或全员配装正在验证，请稍后加入");
                 return;
             }
             // Approval is asynchronous; reserve capacity for accepted clients whose connection event has not run yet.
@@ -1029,6 +1190,15 @@ public class LobbyManager : MonoBehaviour
             m_IsConnecting = false;
             m_IsInLobby = true;
             ConnectionStatus = CurrentLobby != null ? "已加入房间。" : "已连接，正在同步房间…";
+            if (m_IsDedicatedPvpSession)
+            {
+                BindLocalPvpProfile();
+                if (m_ClientNetworkSceneManager == null && networkManager.SceneManager != null)
+                {
+                    m_ClientNetworkSceneManager = networkManager.SceneManager;
+                    m_ClientNetworkSceneManager.OnSceneEvent += OnClientNetworkSceneEvent;
+                }
+            }
         }
         if (networkManager != null && networkManager.IsServer &&
             m_PendingConnections.TryGetValue(clientId, out ConnectionPayload payload))
@@ -1052,7 +1222,7 @@ public class LobbyManager : MonoBehaviour
                 networkManager.DisconnectClient(clientId, "房间状态不存在");
                 return;
             }
-            if (m_IsDedicatedPvpServer && CurrentLobby.IsStarted.Value)
+            if (m_IsDedicatedPvpServer && (CurrentLobby.IsStarted.Value || CurrentLobby.PvpIsPreparingMatch.Value))
             {
                 networkManager.DisconnectClient(clientId, "对局已经开始，请等待下一局");
                 return;
@@ -1084,6 +1254,7 @@ public class LobbyManager : MonoBehaviour
     {
         m_AuthenticatingClients.Remove(clientId);
         m_ClientProfiles.Remove(clientId);
+        m_ProfileValidationRequests.Remove(clientId);
         if (NetworkManager.Singleton != null && !NetworkManager.Singleton.IsServer)
             ConnectionStatus = NetworkManager.Singleton.DisconnectReason;
         NetworkManager networkManager = NetworkManager.Singleton;
@@ -1095,6 +1266,8 @@ public class LobbyManager : MonoBehaviour
 
         if (isServer && CurrentLobby != null && CurrentLobby.IsSpawned)
         {
+            if (CurrentLobby.PvpIsPreparingMatch.Value && m_PvpStartParticipants.Contains(clientId))
+                m_PvpStartPreparationError = "有玩家离开房间，开局已取消。请确认成员和队伍后重新开始。";
             bool wasRoomOwner = CurrentLobby.IsRoomOwner(clientId);
             m_ClientNames.TryGetValue(clientId, out string disconnectedName);
             m_ClientNames.Remove(clientId);
@@ -1130,6 +1303,7 @@ public class LobbyManager : MonoBehaviour
         // NGO reports LocalClientId here after a client has connected, not the server's reserved zero ID.
         if (!isServer)
         {
+            m_PvpDisconnectedDuringLoad |= m_IsClientPvpSceneLoading;
             ReturnPvpClientToLobbyIfNeeded("client-disconnected");
             ResetLocalConnectionState(string.IsNullOrWhiteSpace(ConnectionStatus) ? "连接已断开，请重新加入房间。" : ConnectionStatus);
         }
@@ -1145,6 +1319,7 @@ public class LobbyManager : MonoBehaviour
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager != null && !networkManager.IsServer)
         {
+            m_PvpDisconnectedDuringLoad |= m_IsClientPvpSceneLoading;
             ReturnPvpClientToLobbyIfNeeded("network-shutdown");
             string reason = networkManager.DisconnectReason;
             ResetLocalConnectionState(string.IsNullOrWhiteSpace(reason) ? "连接已断开，请重新加入房间。" : reason);
@@ -1158,10 +1333,10 @@ public class LobbyManager : MonoBehaviour
     {
         // Only a PVP client's local scene may be unloaded here. Dedicated-server and PVE scene flows stay network-controlled.
         // Use the actual scene rather than a cached mode: an early lobby spawn can precede its GameModeValue update.
-        if (SceneManager.GetActiveScene().name == "GamePVP" && !m_IsApplicationQuitting)
+        if (SceneManager.GetActiveScene().name == GameFlowScenes.PvpMatch && !m_IsApplicationQuitting)
             LogPvpReturnState(source);
         if (m_IsApplicationQuitting || m_IsReturningToLobby || m_IsDedicatedPvpServer ||
-            SceneManager.GetActiveScene().name != "GamePVP")
+            SceneManager.GetActiveScene().name != GameFlowScenes.PvpMatch)
             return;
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager != null && networkManager.IsServer)
@@ -1189,10 +1364,18 @@ public class LobbyManager : MonoBehaviour
             yield break;
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-        if (SceneManager.GetActiveScene().name != "GameStart")
+        if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MultiplayerLobby, out string message))
         {
-            LogPvpReturnState("loading-GameStart");
-            yield return SceneManager.LoadSceneAsync("GameStart", LoadSceneMode.Single);
+            ConnectionStatus = message;
+            Debug.LogError("[PVP Exit] " + message);
+            m_IsReturningToLobby = false;
+            OnLobbyChanged?.Invoke();
+            yield break;
+        }
+        if (SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby)
+        {
+            LogPvpReturnState("loading-" + GameFlowScenes.MultiplayerLobby);
+            yield return SceneManager.LoadSceneAsync(GameFlowScenes.MultiplayerLobby, LoadSceneMode.Single);
         }
         m_IsReturningToLobby = false;
         LogPvpReturnState("return-complete");
@@ -1212,6 +1395,7 @@ public class LobbyManager : MonoBehaviour
 
     private void ResetLocalConnectionState(string status)
     {
+        UnbindLocalPvpProfile();
         m_ConnectionAttempt++;
         m_RequestingTicket = false;
         m_IsConnecting = false;
@@ -1221,6 +1405,226 @@ public class LobbyManager : MonoBehaviour
         if (CurrentLobby != null) CurrentLobby.OnChanged -= HandleCurrentLobbyChanged;
         CurrentLobby = null;
         ResetSessionCollections();
+    }
+
+    private void BindLocalPvpProfile()
+    {
+        if (m_ProfileAccount != null || m_IsDedicatedPvpServer) return;
+        m_ProfileAccount = AccountClient.EnsureInstance();
+        m_ProfileAccount.ProfileChanged += HandleLocalPvpProfileChanged;
+    }
+
+    private void UnbindLocalPvpProfile()
+    {
+        if (m_ProfileAccount != null)
+            m_ProfileAccount.ProfileChanged -= HandleLocalPvpProfileChanged;
+        m_ProfileAccount = null;
+        m_LocalPvpAccountId = null;
+        m_LocalProfileRefreshRequested = false;
+        m_LocalProfileValidationPending = false;
+        m_LocalStartPreparationId = 0;
+        m_LocalProfileRequestId++;
+        if (m_LocalProfileRefreshRoutine != null)
+            StopCoroutine(m_LocalProfileRefreshRoutine);
+        m_LocalProfileRefreshRoutine = null;
+    }
+
+    private void HandleLocalPvpProfileChanged(PlayerProfileData profile)
+    {
+        if (profile == null || !string.Equals(profile.accountId, m_LocalPvpAccountId, StringComparison.Ordinal))
+        {
+            ConnectionStatus = "房间身份仍是入房账号。请退出房间后再使用另一个账号加入。";
+            OnLobbyChanged?.Invoke();
+            return;
+        }
+        if (CurrentLobby != null && !CurrentLobby.IsStarted.Value)
+            RefreshLocalPvpProfile();
+    }
+
+    /// <summary>Refresh the connected player's saved loadout without replacing their authenticated room identity.</summary>
+    public void RefreshLocalPvpProfile()
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (m_IsDedicatedPvpServer || !m_IsDedicatedPvpSession || networkManager == null ||
+            !networkManager.IsConnectedClient || CurrentLobby == null || CurrentLobby.IsStarted.Value ||
+            SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby || CurrentLobby.PvpIsPreparingMatch.Value)
+            return;
+        m_LocalProfileRefreshRequested = true;
+        if (m_LocalProfileRefreshRoutine == null)
+            m_LocalProfileRefreshRoutine = StartCoroutine(RefreshLocalPvpProfileRoutine());
+    }
+
+    public void PrepareLocalPvpMatchProfile(int preparationId)
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (m_IsDedicatedPvpServer || preparationId <= 0 || networkManager == null ||
+            !networkManager.IsConnectedClient || CurrentLobby == null || CurrentLobby.IsStarted.Value)
+            return;
+        m_LocalStartPreparationId = preparationId;
+        m_LocalProfileRefreshRequested = true;
+        if (m_LocalProfileRefreshRoutine == null)
+            m_LocalProfileRefreshRoutine = StartCoroutine(RefreshLocalPvpProfileRoutine());
+    }
+
+    public void CancelLocalPvpMatchPreparation(int preparationId)
+    {
+        if (preparationId == m_LocalStartPreparationId)
+            m_LocalStartPreparationId = 0;
+    }
+
+    private IEnumerator RefreshLocalPvpProfileRoutine()
+    {
+        // ProfileChanged is emitted before AccountClient finishes the cloud request and clears IsBusy.
+        yield return null;
+        try
+        {
+            while (m_LocalProfileRefreshRequested)
+            {
+                m_LocalProfileRefreshRequested = false;
+                AccountClient account = m_ProfileAccount;
+                while (account != null && account.IsBusy) yield return null;
+                NetworkManager networkManager = NetworkManager.Singleton;
+                LobbyState lobby = CurrentLobby;
+                if (account == null || !account.IsAuthenticated ||
+                    !string.Equals(account.Profile.accountId, m_LocalPvpAccountId, StringComparison.Ordinal))
+                {
+                    ConnectionStatus = "请使用入房时的账号同步配装；换账号需要先退出房间。";
+                    if (m_LocalStartPreparationId > 0 && lobby != null && lobby.IsSpawned)
+                        lobby.FailMatchPreparationServerRpc(m_LocalStartPreparationId, ConnectionStatus);
+                    OnLobbyChanged?.Invoke();
+                    yield break;
+                }
+                if (networkManager == null || !networkManager.IsConnectedClient || lobby == null ||
+                    !lobby.IsSpawned || lobby.IsStarted.Value ||
+                    SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby)
+                    yield break;
+
+                int requestId = ++m_LocalProfileRequestId;
+                int preparationId = m_LocalStartPreparationId;
+                // A preparation request arriving during an existing cloud save is satisfied by this fresh ticket.
+                m_LocalProfileRefreshRequested = false;
+                int connectionAttempt = m_ConnectionAttempt;
+                string ticket = null;
+                string ticketError = null;
+                bool ticketFinished = false;
+                ConnectionStatus = "正在同步已保存的角色与配装…";
+                OnLobbyChanged?.Invoke();
+                account.RequestGameTicket((value, error) =>
+                {
+                    if (this == null || connectionAttempt != m_ConnectionAttempt || requestId != m_LocalProfileRequestId)
+                        return;
+                    ticket = value;
+                    ticketError = error;
+                    ticketFinished = true;
+                });
+                while (!ticketFinished) yield return null;
+                if (string.IsNullOrEmpty(ticket))
+                {
+                    ConnectionStatus = string.IsNullOrEmpty(ticketError) ? "配装同步失败，请重新登录后重试。" : ticketError;
+                    if (preparationId > 0) lobby.FailMatchPreparationServerRpc(preparationId, ConnectionStatus);
+                    OnLobbyChanged?.Invoke();
+                    continue;
+                }
+                if (CurrentLobby != lobby || !lobby.IsSpawned || lobby.IsStarted.Value)
+                    yield break;
+                if (preparationId > 0 && preparationId != m_LocalStartPreparationId)
+                    continue;
+                m_LocalProfileValidationPending = true;
+                lobby.RequestRefreshProfileServerRpc(ticket, requestId, preparationId);
+                float timeoutAt = Time.realtimeSinceStartup + 60f;
+                while (m_LocalProfileValidationPending && Time.realtimeSinceStartup < timeoutAt)
+                    yield return null;
+                if (m_LocalProfileValidationPending)
+                {
+                    m_LocalProfileValidationPending = false;
+                    ConnectionStatus = "服务器同步配装超时，请重试或重新加入房间。";
+                    if (preparationId > 0 && lobby.IsSpawned)
+                        lobby.FailMatchPreparationServerRpc(preparationId, ConnectionStatus);
+                    OnLobbyChanged?.Invoke();
+                }
+            }
+        }
+        finally
+        {
+            m_LocalProfileValidationPending = false;
+            m_LocalProfileRefreshRoutine = null;
+            OnLobbyChanged?.Invoke();
+        }
+    }
+
+    public void CompleteLocalPvpProfileRefresh(int requestId, string error)
+    {
+        if (requestId != m_LocalProfileRequestId || !m_LocalProfileValidationPending) return;
+        m_LocalProfileValidationPending = false;
+        ConnectionStatus = string.IsNullOrEmpty(error) ? "角色与配装已同步到当前房间。" : error;
+        OnLobbyChanged?.Invoke();
+    }
+
+    public void HandlePvpProfileRefreshRequest(ulong clientId, string gameTicket, int requestId, int preparationId = 0)
+    {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        LobbyState lobby = CurrentLobby;
+        if (!m_IsDedicatedPvpServer || networkManager == null || !networkManager.IsServer || lobby == null)
+            return;
+        string error = null;
+        if (m_IsDedicatedRoomResetting || lobby.IsStarted.Value ||
+            SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby)
+            error = "当前对局已开始或场景正在切换，请在大厅重新同步。";
+        else if (!networkManager.ConnectedClients.ContainsKey(clientId) ||
+                 !m_ClientProfiles.TryGetValue(clientId, out _) || lobby.GetPlayerCharacterIndex(clientId) == byte.MaxValue)
+            error = "房间身份不存在，请重新加入房间。";
+        else if (requestId <= 0 || string.IsNullOrEmpty(gameTicket) || gameTicket.Length > 512)
+            error = "无效的配装验证凭证。";
+        else if (m_ProfileValidationRequests.ContainsKey(clientId))
+            error = "服务器正在同步此玩家的配装，请稍候。";
+        else if (preparationId > 0 && (!lobby.PvpIsPreparingMatch.Value ||
+                 preparationId != m_PvpStartPreparationId || !m_PvpStartWaitingClients.Contains(clientId)))
+            error = "本次开局验证已取消，请在大厅重试。";
+        if (error != null)
+        {
+            lobby.SendProfileRefreshResult(clientId, requestId, error);
+            if (preparationId > 0) HandlePvpMatchPreparationFailure(clientId, preparationId, error);
+            return;
+        }
+
+        string expectedAccountId = m_ClientProfiles[clientId].accountId;
+        m_ProfileValidationRequests[clientId] = requestId;
+        StartCoroutine(AccountClient.RedeemServerTicket(gameTicket, (profile, validationError) =>
+        {
+            if (this == null || !m_ProfileValidationRequests.TryGetValue(clientId, out int pendingId) || pendingId != requestId)
+                return;
+            m_ProfileValidationRequests.Remove(clientId);
+            if (CurrentLobby != lobby || !lobby.IsSpawned ||
+                !networkManager.ConnectedClients.ContainsKey(clientId) ||
+                !m_ClientProfiles.TryGetValue(clientId, out PlayerProfileData previousProfile))
+                return;
+            if (profile == null)
+                validationError = string.IsNullOrEmpty(validationError) ? "服务器无法验证已保存的配装。" : validationError;
+            else if (!string.Equals(profile.accountId, expectedAccountId, StringComparison.Ordinal) ||
+                     !string.Equals(previousProfile.accountId, expectedAccountId, StringComparison.Ordinal))
+                validationError = "配装账号与入房账号不一致，请退出后重新加入。";
+            else if (m_IsDedicatedRoomResetting || lobby.IsStarted.Value ||
+                     SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby)
+                validationError = "对局状态已改变，请返回大厅后重试同步。";
+            else if (preparationId > 0 && (!lobby.PvpIsPreparingMatch.Value ||
+                     preparationId != m_PvpStartPreparationId))
+                validationError = "本次开局验证已取消，请在大厅重试。";
+            else if (profile.revision < previousProfile.revision)
+                validationError = "配装档案已更新，请重新同步。";
+            else if (lobby.UpdatePvpPlayerProfile(clientId, profile))
+            {
+                m_ClientProfiles[clientId] = profile;
+                validationError = string.Empty;
+                if (preparationId > 0 && preparationId == m_PvpStartPreparationId)
+                    m_PvpStartWaitingClients.Remove(clientId);
+            }
+            else
+                validationError = "未找到当前房间中的玩家，请重新加入。";
+            lobby.SendProfileRefreshResult(clientId, requestId, validationError);
+            if (!string.IsNullOrEmpty(validationError) && preparationId > 0)
+                HandlePvpMatchPreparationFailure(clientId, preparationId, validationError);
+            OnLobbyChanged?.Invoke();
+        }));
     }
 
     private void EnsureNetworkCallbacks()
@@ -1238,6 +1642,12 @@ public class LobbyManager : MonoBehaviour
 
     private void RemoveNetworkCallbacks()
     {
+        if (m_ClientNetworkSceneManager != null)
+        {
+            m_ClientNetworkSceneManager.OnSceneEvent -= OnClientNetworkSceneEvent;
+            m_ClientNetworkSceneManager = null;
+        }
+        m_IsClientPvpSceneLoading = false;
         NetworkManager networkManager = NetworkManager.Singleton;
         if (networkManager == null || !m_NetworkCallbacksRegistered)
             return;
@@ -1275,24 +1685,108 @@ public class LobbyManager : MonoBehaviour
         m_PendingRoomMode = LobbyGameMode.PVP;
         m_ActiveGameMode = LobbyGameMode.PVP;
 
-        if (SceneManager.GetActiveScene().name == "GamePVP" && networkManager.SceneManager != null)
-        {
-            m_IsDedicatedRoomResetting = true;
-            SceneEventProgressStatus status = networkManager.SceneManager.LoadScene("GameStart", LoadSceneMode.Single);
-            if (status != SceneEventProgressStatus.Started)
-            {
-                m_IsDedicatedRoomResetting = false;
-                Debug.LogError("[Dedicated PVP] 返回 GameStart 失败：" + status);
-            }
-        }
-        else
-        {
-            m_IsDedicatedRoomResetting = false;
-        }
+        // The last player may leave while GamePVP or GameLobby is still loading.
+        // Reuse the pending return rather than issuing a competing NGO scene operation.
+        RequestDedicatedReturnToLobby();
 
         RefreshDedicatedPvpServerStatus();
         Debug.Log("[Dedicated PVP] 房间已清空，服务器恢复为空闲状态");
         OnLobbyChanged?.Invoke();
+    }
+
+    private void RequestDedicatedReturnToLobby()
+    {
+        m_IsDedicatedRoomResetting = true;
+        RefreshDedicatedPvpServerStatus();
+        if (m_DedicatedLobbyReturnRoutine == null && !m_DedicatedLobbyReturnLoadPending)
+            m_DedicatedLobbyReturnRoutine = StartCoroutine(ReturnDedicatedServerToLobby());
+    }
+
+    private IEnumerator ReturnDedicatedServerToLobby()
+    {
+        // StartCoroutine runs immediately; yield before callbacks can request the same transition again.
+        yield return null;
+        try
+        {
+            NetworkManager networkManager = NetworkManager.Singleton;
+            while (m_IsPvpMatchLoading && networkManager != null && networkManager.IsServer &&
+                   networkManager.IsListening && !m_IsApplicationQuitting)
+                yield return null;
+            if (networkManager == null || !networkManager.IsServer || !networkManager.IsListening ||
+                m_IsApplicationQuitting)
+                yield break;
+
+            if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MultiplayerLobby, out string message))
+            {
+                Debug.LogError("[Dedicated PVP] " + message);
+                if (CurrentLobby != null) CurrentLobby.MarkPvpReturnUnavailable();
+                yield break;
+            }
+            if (SceneManager.GetActiveScene().name == GameFlowScenes.MultiplayerLobby)
+            {
+                CompleteDedicatedLobbyReturn();
+                yield break;
+            }
+            if (networkManager.SceneManager == null)
+            {
+                Debug.LogError("[Dedicated PVP] 网络场景管理器未就绪，无法返回 GameLobby。");
+                if (CurrentLobby != null) CurrentLobby.MarkPvpReturnUnavailable();
+                yield break;
+            }
+
+            DespawnPvpMatchPlayers(networkManager);
+            while (!m_IsApplicationQuitting && networkManager.IsServer && networkManager.IsListening)
+            {
+                SceneEventProgressStatus status = networkManager.SceneManager.LoadScene(
+                    GameFlowScenes.MultiplayerLobby, LoadSceneMode.Single);
+                if (status == SceneEventProgressStatus.Started)
+                {
+                    m_DedicatedLobbyReturnLoadPending = true;
+                    Debug.Log("[Dedicated PVP] 正在返回 GameLobby，保留房间=" + (CurrentLobby != null));
+                    yield break;
+                }
+                if (status != SceneEventProgressStatus.SceneEventInProgress)
+                {
+                    Debug.LogError("[Dedicated PVP] 返回 GameLobby 失败：" + status);
+                    if (CurrentLobby != null) CurrentLobby.MarkPvpReturnUnavailable();
+                    yield break;
+                }
+                // NGO may still be completing the preceding load event even after its callback runs.
+                yield return new WaitForSecondsRealtime(0.2f);
+            }
+        }
+        finally
+        {
+            m_DedicatedLobbyReturnRoutine = null;
+        }
+    }
+
+    private static void DespawnPvpMatchPlayers(NetworkManager networkManager)
+    {
+        if (networkManager.SpawnManager == null)
+            return;
+        // Snapshot because Despawn mutates SpawnedObjectsList. LobbyState survives the scene change.
+        var spawnedObjects = new List<NetworkObject>(networkManager.SpawnManager.SpawnedObjectsList);
+        foreach (NetworkObject networkObject in spawnedObjects)
+        {
+            if (networkObject != null && networkObject.IsSpawned &&
+                (networkObject.IsPlayerObject || networkObject.GetComponent<PvpPlayerCombat>() != null))
+                networkObject.Despawn(true);
+        }
+    }
+
+    private void CompleteDedicatedLobbyReturn()
+    {
+        m_DedicatedLobbyReturnLoadPending = false;
+        m_IsPvpMatchLoading = false;
+        m_IsPvpMatchReturning = false;
+        m_IsDedicatedRoomResetting = false;
+        // Keeping IsStarted until loading completes prevents mid-transition team changes or another start request.
+        if (CurrentLobby != null && CurrentLobby.IsSpawned)
+            CurrentLobby.ResetPvpMatchForLobby();
+        RefreshDedicatedPvpServerStatus();
+        OnLobbyChanged?.Invoke();
+        Debug.Log("[Dedicated PVP] GameLobby 已就绪，保留房间=" + (CurrentLobby != null));
     }
 
     // ---- 场景切换完成后生成玩家 ----
@@ -1307,11 +1801,12 @@ public class LobbyManager : MonoBehaviour
         if (networkManager == null || !networkManager.IsServer)
             return;
 
-        if (m_IsDedicatedPvpServer && sceneName == "GameStart")
+        if (m_IsDedicatedPvpServer && sceneName == GameFlowScenes.MultiplayerLobby)
         {
-            m_IsDedicatedRoomResetting = false;
-            RefreshDedicatedPvpServerStatus();
-            Debug.Log("[Dedicated PVP] GameStart 已重新载入，可以创建下一间房");
+            // Disconnect synchronously while the return is still marked pending. The existing
+            // disconnect path transfers room ownership or clears an empty room without another scene load.
+            DisconnectPvpLoadTimeouts(networkManager, clientsTimedOut);
+            CompleteDedicatedLobbyReturn();
             return;
         }
 
@@ -1327,7 +1822,12 @@ public class LobbyManager : MonoBehaviour
             return;
         }
 
-        if (sceneName != "GamePVP")
+        if (sceneName != GameFlowScenes.PvpMatch)
+            return;
+        m_IsPvpMatchLoading = false;
+        if (m_IsDedicatedPvpServer)
+            DisconnectPvpLoadTimeouts(networkManager, clientsTimedOut);
+        if (m_IsDedicatedRoomResetting || CurrentLobby == null)
             return;
 
         if (clientsTimedOut != null && clientsTimedOut.Count > 0)
@@ -1342,8 +1842,26 @@ public class LobbyManager : MonoBehaviour
         Debug.Log("[Lobby] 全员进入 " + sceneName + "，已按房间分队生成玩家角色");
     }
 
+    private static void DisconnectPvpLoadTimeouts(NetworkManager networkManager, List<ulong> clientsTimedOut)
+    {
+        if (clientsTimedOut == null || clientsTimedOut.Count == 0) return;
+        // NGO's disconnect notifications may update its original scene-progress collections.
+        foreach (ulong clientId in new List<ulong>(clientsTimedOut))
+        {
+            if (clientId == NetworkManager.ServerClientId || !networkManager.ConnectedClients.ContainsKey(clientId))
+                continue;
+            Debug.LogWarning("[Dedicated PVP] 玩家场景加载超时，断开 client=" + clientId);
+            networkManager.DisconnectClient(clientId, "场景加载超时，请返回大厅后重新加入房间。");
+        }
+    }
+
     private void SpawnPlayerFor(ulong clientId, LobbyGameMode gameMode)
     {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null || !networkManager.IsServer ||
+            !networkManager.ConnectedClients.TryGetValue(clientId, out NetworkClient client) ||
+            (client.PlayerObject != null && client.PlayerObject.IsSpawned))
+            return;
         int joinIndex = m_JoinOrder.IndexOf(clientId);
         string[] prefabPaths = gameMode == LobbyGameMode.PVP
             ? pvpPlayerPrefabResourcePaths
@@ -1532,6 +2050,25 @@ public class LobbyManager : MonoBehaviour
         // Keep the cached mode in sync when the authoritative initial values arrive after OnNetworkSpawn.
         if (CurrentLobby != null)
             m_ActiveGameMode = CurrentLobby.GameMode;
+        if (!m_IsDedicatedPvpServer && CurrentLobby != null && CurrentLobby.GameMode == LobbyGameMode.PVP &&
+            !CurrentLobby.IsStarted.Value && m_ProfileAccount != null && m_ProfileAccount.IsAuthenticated &&
+            string.Equals(m_ProfileAccount.Profile.accountId, m_LocalPvpAccountId, StringComparison.Ordinal))
+        {
+            NetworkManager networkManager = NetworkManager.Singleton;
+            if (networkManager != null)
+            {
+                foreach (LobbyPlayerData player in CurrentLobby.GetPlayers())
+                {
+                    if (player.ClientId == networkManager.LocalClientId &&
+                        (!player.Appearance.Equals(m_ProfileAccount.Profile.appearance.Sanitized()) ||
+                         !player.Loadout.Equals(m_ProfileAccount.Profile.loadout.Sanitized())))
+                    {
+                        RefreshLocalPvpProfile();
+                        break;
+                    }
+                }
+            }
+        }
         if (IsHost && discovery != null && CurrentLobby != null)
             discovery.UpdateBroadcastInfo(CurrentLobby.PlayerCount, CurrentLobby.IsStarted.Value);
         RefreshDedicatedPvpServerStatus();
@@ -1542,11 +2079,33 @@ public class LobbyManager : MonoBehaviour
     {
         if (m_IsDedicatedPvpServer)
             return;
-        if (scene.name != "GamePVP" || CurrentLobby == null || CurrentLobby.GameMode != LobbyGameMode.PVP)
+        if (scene.name == GameFlowScenes.MultiplayerLobby)
+        {
+            m_PvpDisconnectedDuringLoad = false;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            OnLobbyChanged?.Invoke();
+            return;
+        }
+        if (scene.name == GameFlowScenes.PvpMatch && m_PvpDisconnectedDuringLoad)
+        {
+            m_PvpDisconnectedDuringLoad = false;
+            ReturnPvpClientToLobbyIfNeeded("disconnected-during-scene-load");
+            return;
+        }
+        if (scene.name == GameFlowScenes.PvpMatch)
+            m_IsClientPvpSceneLoading = false;
+        if (scene.name != GameFlowScenes.PvpMatch || CurrentLobby == null || CurrentLobby.GameMode != LobbyGameMode.PVP)
             return;
 
         PvpGameHudUI.AttachTo(GameObject.Find("GamePanel"));
         PvpScoreboardUI.AttachTo(GameObject.Find("RecordPanel"));
+    }
+
+    private void OnClientNetworkSceneEvent(SceneEvent sceneEvent)
+    {
+        if (sceneEvent.SceneEventType == SceneEventType.Load && sceneEvent.SceneName == GameFlowScenes.PvpMatch)
+            m_IsClientPvpSceneLoading = true;
     }
 
     public List<string> GetPlayerNames()
@@ -1566,7 +2125,7 @@ public class LobbyManager : MonoBehaviour
 
     private static string GetGameSceneName(LobbyGameMode gameMode)
     {
-        return gameMode == LobbyGameMode.PVP ? "GamePVP" : "GamePVE";
+        return gameMode == LobbyGameMode.PVP ? GameFlowScenes.PvpMatch : "GamePVE";
     }
 
     private int GetGamePort()
@@ -1606,7 +2165,7 @@ public class LobbyManager : MonoBehaviour
             hasRoom ? CurrentLobby.GetRoomName() : string.Empty,
             hasRoom ? CurrentLobby.PlayerCount : 0,
             GetMaxPlayers(LobbyGameMode.PVP),
-            hasRoom && CurrentLobby.IsStarted.Value,
+            hasRoom && (CurrentLobby.IsStarted.Value || CurrentLobby.PvpIsPreparingMatch.Value),
             hasRoom,
             canCreate);
     }
@@ -1677,6 +2236,7 @@ public class LobbyManager : MonoBehaviour
 
     private void ResetSessionCollections()
     {
+        m_ProfileValidationRequests.Clear();
         m_PendingConnections.Clear();
         m_ClientNames.Clear();
         m_JoinOrder.Clear();

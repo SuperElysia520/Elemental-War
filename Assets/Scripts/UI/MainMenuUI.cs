@@ -1,8 +1,5 @@
 using System.Collections;
-using System.Collections.Generic;
-using System.Drawing;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 
@@ -20,6 +17,7 @@ public class MainMenuUI : UIBase<MainMenuUI>
     public Button btnLanguage;
     public Button btnVoice;
     public Button btnExit;
+    private bool loadingLobby;
 
     protected override void Awake()
     {
@@ -74,16 +72,31 @@ public class MainMenuUI : UIBase<MainMenuUI>
 
     private void ShowPVPLobbyMenu()
     {
-        if (!AccountClient.EnsureInstance().IsAuthenticated)
+        if (loadingLobby)
+            return;
+        if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MultiplayerLobby, out string message))
         {
-            ShowCharacterMenu();
+            Debug.LogWarning("[Main Menu] " + message);
+            Exit(() =>
+            {
+                btnExit.gameObject.SetActive(false);
+                TipMenuUI.instance.EnterMessage(message);
+            });
             return;
         }
-        Exit(() => // 主菜单先播放FadeOut
+        loadingLobby = true;
+        Exit(() =>
         {
-            LobbyMenuUI.instance.Enter(LobbyGameMode.PVP); // 进入仅显示 PVP 房间的团队大厅
-            btnExit.gameObject.SetActive(false); // 隐藏退出按钮
+            StartCoroutine(LoadMultiplayerLobby());
         });
+    }
+
+    private IEnumerator LoadMultiplayerLobby()
+    {
+        Time.timeScale = 1f;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        yield return SceneManager.LoadSceneAsync(GameFlowScenes.MultiplayerLobby, LoadSceneMode.Single);
     }
 
     private void ShowCharacterMenu()
@@ -91,7 +104,7 @@ public class MainMenuUI : UIBase<MainMenuUI>
         Exit(() =>
         {
             btnExit.gameObject.SetActive(false);
-            CharacterCustomizationUI.Show(() => { Enter(); btnExit.gameObject.SetActive(true); });
+            CharacterCustomizationUI.Show(() => { Enter(); btnExit.gameObject.SetActive(true); }, "返回主菜单");
         });
     }
 

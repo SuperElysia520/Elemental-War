@@ -18,6 +18,7 @@ public static class PvpMigrationWorkbench
         public bool success, playing, compiling;
         public string insecureHttpOption;
         public string[] scenes, recentErrors;
+        public string[] missingSceneScripts, missingScenePrefabs;
     }
     private static readonly List<string> Errors = new List<string>();
     private static double nextPoll;
@@ -50,6 +51,7 @@ public static class PvpMigrationWorkbench
             switch (request.operation)
             {
                 case "status": break;
+                case "inspect-open-scene": InspectOpenScenes(result); break;
                 case "save-project": AssetDatabase.SaveAssets(); break;
                 case "refresh": AssetDatabase.Refresh(); break;
                 case "build-assets":
@@ -75,6 +77,15 @@ public static class PvpMigrationWorkbench
                     break;
                 case "build-client": Invoke("PvpMigrationBuildValidation", "BuildClient"); break;
                 case "build-server": Invoke("PvpMigrationBuildValidation", "BuildServer"); break;
+                case "setup-main-menu-character": Invoke("MainMenuCharacterSetup", "Apply"); break;
+                case "capture-main-menu": Invoke("MainMenuCharacterSetup", "CapturePreview"); break;
+                case "save-main-menu":
+                    if (EditorApplication.isPlayingOrWillChangePlaymode || SceneManager.GetActiveScene().path != "Assets/Scenes/GameStart.unity")
+                        throw new InvalidOperationException("Only the open, stopped GameStart scene may be saved.");
+                    if (!EditorSceneManager.SaveScene(SceneManager.GetActiveScene()))
+                        throw new InvalidOperationException("Main menu scene could not be saved.");
+                    break;
+                case "validate-main-menu-runtime": Invoke("MainMenuFlowValidation", "Run"); break;
                 default: throw new InvalidOperationException("Unknown operation: " + request.operation);
             }
             result.success = true;
@@ -99,5 +110,28 @@ public static class PvpMigrationWorkbench
         Type type = typeof(PvpMigrationWorkbench).Assembly.GetType(typeName);
         if (type == null) throw new InvalidOperationException("Tool not compiled: " + typeName);
         type.GetMethod(method, BindingFlags.Static | BindingFlags.Public).Invoke(null, null);
+    }
+
+    private static void InspectOpenScenes(Result result)
+    {
+        var missingScripts = new List<string>();
+        var missingPrefabs = new List<string>();
+        for (int index = 0; index < SceneManager.sceneCount; index++)
+        {
+            Scene scene = SceneManager.GetSceneAt(index);
+            foreach (GameObject root in scene.GetRootGameObjects())
+            foreach (Transform item in root.GetComponentsInChildren<Transform>(true))
+            {
+                GameObject target = item.gameObject;
+                string label = scene.name + "/" + target.name;
+                if (GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(target) > 0)
+                    missingScripts.Add(label);
+                if (PrefabUtility.IsAnyPrefabInstanceRoot(target) &&
+                    PrefabUtility.GetPrefabAssetType(target) == PrefabAssetType.MissingAsset)
+                    missingPrefabs.Add(label);
+            }
+        }
+        result.missingSceneScripts = missingScripts.ToArray();
+        result.missingScenePrefabs = missingPrefabs.ToArray();
     }
 }

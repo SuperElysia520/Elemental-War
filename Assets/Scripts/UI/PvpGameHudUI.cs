@@ -36,6 +36,10 @@ public class PvpGameHudUI : MonoBehaviour
     private int m_LastDisplayedBullets = -1;
     private float m_NextRosterRefreshTime;
     private Button m_LeaveMatchButton;
+    private Text m_SettlementText;
+    private int m_LastSettlementSeconds = -1;
+    private LobbyTeam m_LastSettlementWinner;
+    private bool m_LastSettlementUnavailable;
 
     public static void AttachTo(GameObject gamePanel)
     {
@@ -82,11 +86,13 @@ public class PvpGameHudUI : MonoBehaviour
         SetSelfHealth(null);
         HideAllTeammateRows();
         CreateLeaveMatchButton();
+        CreateSettlementText();
     }
 
     private void Update()
     {
         UpdateScore();
+        UpdateSettlement();
 
         if (m_LocalPlayer == null || Time.unscaledTime >= m_NextRosterRefreshTime)
         {
@@ -135,6 +141,57 @@ public class PvpGameHudUI : MonoBehaviour
             label.text = "正在返回大厅…";
             LobbyManager.Instance.LeaveRoom();
         });
+    }
+
+    private void CreateSettlementText()
+    {
+        m_SettlementText = GetText("SettlementPanel/ResultText");
+        if (m_SettlementText == null)
+        {
+            var root = new GameObject("PvpSettlementResult", typeof(RectTransform), typeof(Text), typeof(Outline));
+            root.transform.SetParent(transform, false);
+            var rect = root.GetComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -112f);
+            rect.sizeDelta = new Vector2(780f, 90f);
+            m_SettlementText = root.GetComponent<Text>();
+            m_SettlementText.font = m_SelfHealthNumber.font;
+            m_SettlementText.fontSize = 26;
+            m_SettlementText.alignment = TextAnchor.MiddleCenter;
+            m_SettlementText.color = Color.white;
+            m_SettlementText.raycastTarget = false;
+            root.GetComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
+        }
+        m_SettlementText.gameObject.SetActive(false);
+    }
+
+    private void UpdateSettlement()
+    {
+        if (m_SettlementText == null) return;
+        LobbyState lobby = LobbyManager.Instance != null ? LobbyManager.Instance.CurrentLobby : null;
+        bool hasResult = lobby != null && lobby.GameMode == LobbyGameMode.PVP && lobby.IsPvpMatchOver;
+        m_SettlementText.gameObject.SetActive(hasResult);
+        if (!hasResult)
+        {
+            m_LastSettlementWinner = LobbyTeam.None;
+            m_LastSettlementSeconds = -1;
+            return;
+        }
+        int seconds = lobby.GetPvpReturnSecondsRemaining();
+        bool unavailable = lobby.PvpReturnToLobbyAtServerTime.Value < 0d;
+        if (m_LastSettlementWinner == lobby.WinnerTeam && m_LastSettlementSeconds == seconds &&
+            m_LastSettlementUnavailable == unavailable)
+            return;
+        m_LastSettlementWinner = lobby.WinnerTeam;
+        m_LastSettlementSeconds = seconds;
+        m_LastSettlementUnavailable = unavailable;
+        string result = (lobby.WinnerTeam == LobbyTeam.Red ? "红队获胜" : "蓝队获胜") +
+                        "   " + lobby.RedKills.Value + " : " + lobby.BlueKills.Value;
+        string destination = unavailable ? "无法返回大厅，请检查 GameLobby 场景配置。" :
+            seconds > 0 ? seconds + " 秒后全员返回大厅（保留原房间）" : "正在返回大厅…";
+        m_SettlementText.text = result + "\n" + destination;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
     }
 
     private Image GetImage(string path)

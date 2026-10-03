@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -7,7 +8,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// GameStart 内共用的联机大厅面板。PVE 显示普通成员列表；PVP 显示红蓝各五个可点击队伍位置。
+/// 共用的房间面板。PVE 显示普通成员列表；PVP 显示红蓝各五个可点击队伍位置。
 /// </summary>
 public class LobbyMenuUI : UIBase<LobbyMenuUI>
 {
@@ -71,6 +72,10 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     private LanDiscovery.RoomEntry m_SelectedRoom;
     private bool m_ButtonsInteractable = true;
     private bool m_EventsBound;
+    private bool m_HasEntered;
+    private Action m_BackHandler;
+    private LobbyManager m_BoundLobby;
+    private LanDiscovery m_BoundDiscovery;
     private LobbyGameMode m_RequestedGameMode = LobbyGameMode.PVE;
     private Coroutine m_PvpCreateRoutine;
 
@@ -95,10 +100,15 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     protected override void Start()
     {
-        base.Start();
+        // A disabled scene panel may receive Enter before its first Start.
+        if (!m_HasEntered)
+            base.Start();
         if (inputPlayerName != null)
-            inputPlayerName.text = SystemInfo.deviceName;
+            inputPlayerName.text = Lobby != null ? Lobby.PlayerName : SystemInfo.deviceName;
     }
+
+    /// <summary>GameLobby 关闭房间面板时回到主界面；旧 GameStart 保持原有返回行为。</summary>
+    public void SetBackHandler(Action handler) => m_BackHandler = handler;
 
     /// <summary>由主菜单的 PVE/PVP 入口指定本次只浏览和创建对应模式的房间。</summary>
     public void Enter(LobbyGameMode gameMode)
@@ -114,16 +124,27 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void EnterInternal(LobbyGameMode gameMode)
     {
+        m_HasEntered = true;
         m_RequestedGameMode = gameMode;
         if (Lobby != null)
             Lobby.SetBrowsingGameMode(m_RequestedGameMode);
 
         BindEvents();
-        base.Enter();
-        ShowBrowseView();
+        if (HasMenuAnimation())
+            base.Enter();
+        else
+        {
+            gameObject.SetActive(true);
+            ResumeButtons();
+        }
+        bool inRoom = Lobby != null && (Lobby.IsInLobby || Lobby.IsConnecting);
+        if (inRoom)
+            ShowInRoomView();
+        else
+            ShowBrowseView();
         UpdateModePresentation();
 
-        if (Discovery != null)
+        if (!inRoom && Discovery != null)
         {
             if (m_RequestedGameMode == LobbyGameMode.PVE)
             {
@@ -143,6 +164,23 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         RefreshRoomListView();
     }
 
+    public override void Exit(Action action)
+    {
+        if (HasMenuAnimation())
+            base.Exit(action);
+        else
+        {
+            DisableButtons();
+            action?.Invoke();
+        }
+    }
+
+    private bool HasMenuAnimation()
+    {
+        Animator menuAnimator = GetComponent<Animator>();
+        return menuAnimator != null && menuAnimator.enabled && menuAnimator.runtimeAnimatorController != null;
+    }
+
     private void OnEnable()
     {
         BindEvents();
@@ -159,9 +197,11 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         if (m_EventsBound || Lobby == null)
             return;
 
-        Lobby.OnLobbyChanged += RefreshLobbyView;
-        if (Discovery != null)
-            Discovery.OnRoomsChanged += RefreshRoomListView;
+        m_BoundLobby = Lobby;
+        m_BoundDiscovery = Discovery;
+        m_BoundLobby.OnLobbyChanged += RefreshLobbyView;
+        if (m_BoundDiscovery != null)
+            m_BoundDiscovery.OnRoomsChanged += RefreshRoomListView;
         m_EventsBound = true;
     }
 
@@ -170,11 +210,21 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         if (!m_EventsBound)
             return;
 
-        if (Lobby != null)
-            Lobby.OnLobbyChanged -= RefreshLobbyView;
-        if (Discovery != null)
-            Discovery.OnRoomsChanged -= RefreshRoomListView;
+        if (m_BoundLobby != null)
+            m_BoundLobby.OnLobbyChanged -= RefreshLobbyView;
+        if (m_BoundDiscovery != null)
+            m_BoundDiscovery.OnRoomsChanged -= RefreshRoomListView;
+        m_BoundLobby = null;
+        m_BoundDiscovery = null;
         m_EventsBound = false;
+    }
+
+    protected override void OnDestroy()
+    {
+        UnbindEvents();
+        m_BackHandler = null;
+        if (instance == this)
+            base.OnDestroy();
     }
 
     // ---- 按钮回调 ----
@@ -308,7 +358,8 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
     private void OnBackClicked()
     {
         CancelPvpCreateRoutine();
-        if (Lobby != null)
+        bool returnsToLobbyHome = m_BackHandler != null;
+        if (!returnsToLobbyHome && Lobby != null)
             Lobby.LeaveRoom();
         if (Discovery != null)
             Discovery.StopListening();
@@ -317,9 +368,17 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
         Exit(() =>
         {
-            MainMenuUI.instance.Enter();
-            MainMenuUI.instance.StartCoroutine(MainMenuUI.instance.DisplayBtnExit());
             gameObject.SetActive(false);
+            if (returnsToLobbyHome)
+            {
+                m_BackHandler?.Invoke();
+                return;
+            }
+            if (MainMenuUI.instance != null)
+            {
+                MainMenuUI.instance.Enter();
+                MainMenuUI.instance.StartCoroutine(MainMenuUI.instance.DisplayBtnExit());
+            }
         });
     }
 
@@ -395,7 +454,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void SelectTeam(LobbyTeam team)
     {
-        if (Lobby == null || Lobby.CurrentLobby == null)
+        if (!CanInteract || Lobby == null || Lobby.CurrentLobby == null)
             return;
         if (Lobby.CurrentLobby.GetTeamCount(team) >= LobbyState.PvpTeamCapacity)
         {
@@ -409,7 +468,7 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
 
     private void SelectCharacter(byte characterIndex)
     {
-        if (Lobby == null || Lobby.CurrentLobby == null)
+        if (!CanInteract || Lobby == null || Lobby.CurrentLobby == null)
             return;
         Lobby.SelectCharacter(characterIndex);
     }
@@ -625,6 +684,14 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         if (Lobby == null)
             return;
 
+        // Network state can arrive after entering the freshly loaded GameLobby scene.
+        if (m_HasEntered && gameObject.activeInHierarchy && panelBrowse != null && panelBrowse.activeSelf
+            && (Lobby.IsInLobby || Lobby.IsConnecting))
+        {
+            ShowInRoomView();
+            return;
+        }
+
         if (btnCreateRoom != null) btnCreateRoom.interactable = CanInteract && !Lobby.IsConnecting;
         if (btnRefresh != null) btnRefresh.interactable = CanInteract && !Lobby.IsConnecting;
         UpdateJoinButtonState();
@@ -788,7 +855,8 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         LobbyState state = Lobby != null ? Lobby.CurrentLobby : null;
         if (canStart && state.GameMode == LobbyGameMode.PVP)
         {
-            canStart = state.HasMinimumPvpTeams();
+            canStart = !state.IsStarted.Value && !state.PvpIsPreparingMatch.Value
+                && !Lobby.IsLocalPvpProfileSyncInProgress && state.HasMinimumPvpTeams();
             if (canStart)
             {
                 foreach (LobbyPlayerData player in state.GetPlayers())
@@ -1015,7 +1083,8 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
             txtStatus.text = message;
     }
 
-    private bool CanInteract => m_ButtonsInteractable;
+    private bool CanInteract => m_ButtonsInteractable && (Lobby == null || Lobby.CurrentLobby == null
+        || !Lobby.CurrentLobby.PvpIsPreparingMatch.Value);
 
     // ---- UIBase ----
 
@@ -1034,8 +1103,9 @@ public class LobbyMenuUI : UIBase<LobbyMenuUI>
         m_ButtonsInteractable = interactable;
         if (btnCreateRoom != null) btnCreateRoom.interactable = CanInteract;
         if (btnRefresh != null) btnRefresh.interactable = CanInteract;
-        if (btnLeaveRoom != null) btnLeaveRoom.interactable = CanInteract;
-        if (btnBack != null) btnBack.interactable = CanInteract;
+        // Leaving remains available during preparation; the server cancels a start whose roster changes.
+        if (btnLeaveRoom != null) btnLeaveRoom.interactable = m_ButtonsInteractable;
+        if (btnBack != null) btnBack.interactable = m_ButtonsInteractable;
         UpdateJoinButtonState();
         RefreshLobbyView();
     }

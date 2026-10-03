@@ -9,18 +9,8 @@ public static class PvpDedicatedServerBuilder
     private const int ServerStartPort = 7777;
     private const int ServerRoomCount = 1;
 
-    private static readonly string[] ServerScenes =
-    {
-        "Assets/Scenes/GameStart.unity",
-        "Assets/Scenes/GamePVP.unity",
-    };
-
-    private static readonly string[] ClientScenes =
-    {
-        "Assets/Scenes/GameStart.unity",
-        "Assets/Scenes/GamePVP.unity",
-        "Assets/Scenes/GamePVE.unity",
-    };
+    private static string[] ServerScenes => GameFlowBuildScenes.Get(true);
+    private static string[] ClientScenes => GameFlowBuildScenes.Get(false);
 
     [MenuItem("Tools/PVP Dedicated Server/Build Windows Client")]
     public static void BuildWindowsClient()

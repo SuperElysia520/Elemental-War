@@ -97,6 +97,10 @@ public class LobbyState : NetworkBehaviour
     public NetworkVariable<int> BlueKills = new NetworkVariable<int>(0);
     public NetworkVariable<byte> WinnerTeamValue = new NetworkVariable<byte>((byte)LobbyTeam.None);
 
+    /// <summary>Server-time deadline for the shared settlement screen; -1 indicates a return configuration error.</summary>
+    public NetworkVariable<double> PvpReturnToLobbyAtServerTime = new NetworkVariable<double>(0d);
+    public NetworkVariable<bool> PvpIsPreparingMatch = new NetworkVariable<bool>(false);
+
     /// <summary>本地 UI 刷新回调（成员、队伍、房间名或状态变化时触发）。</summary>
     public event Action OnChanged;
 
@@ -104,6 +108,7 @@ public class LobbyState : NetworkBehaviour
     public LobbyGameMode GameMode => (LobbyGameMode)GameModeValue.Value;
     public LobbyTeam WinnerTeam => (LobbyTeam)WinnerTeamValue.Value;
     public bool IsPvpMatchOver => WinnerTeam != LobbyTeam.None;
+    public bool HasPvpSettlementCountdown => IsPvpMatchOver && PvpReturnToLobbyAtServerTime.Value > 0d;
     public bool HasRoomOwner => RoomOwnerClientId.Value != NoRoomOwner;
 
     public override void OnNetworkSpawn()
@@ -117,6 +122,8 @@ public class LobbyState : NetworkBehaviour
         RedKills.OnValueChanged += HandleIntChanged;
         BlueKills.OnValueChanged += HandleIntChanged;
         WinnerTeamValue.OnValueChanged += HandleByteChanged;
+        PvpReturnToLobbyAtServerTime.OnValueChanged += HandleDoubleChanged;
+        PvpIsPreparingMatch.OnValueChanged += HandleBoolChanged;
 
         if (LobbyManager.Instance != null)
             LobbyManager.Instance.RegisterLobby(this);
@@ -135,6 +142,8 @@ public class LobbyState : NetworkBehaviour
         RedKills.OnValueChanged -= HandleIntChanged;
         BlueKills.OnValueChanged -= HandleIntChanged;
         WinnerTeamValue.OnValueChanged -= HandleByteChanged;
+        PvpReturnToLobbyAtServerTime.OnValueChanged -= HandleDoubleChanged;
+        PvpIsPreparingMatch.OnValueChanged -= HandleBoolChanged;
     }
 
     private void HandlePlayerNamesChanged(NetworkListEvent<FixedString64Bytes> changeEvent) => OnChanged?.Invoke();
@@ -144,6 +153,7 @@ public class LobbyState : NetworkBehaviour
     private void HandleByteChanged(byte previousValue, byte newValue) => OnChanged?.Invoke();
     private void HandleUlongChanged(ulong previousValue, ulong newValue) => OnChanged?.Invoke();
     private void HandleIntChanged(int previousValue, int newValue) => OnChanged?.Invoke();
+    private void HandleDoubleChanged(double previousValue, double newValue) => OnChanged?.Invoke();
 
     // ---- 服务器端操作 ----
 
@@ -161,7 +171,42 @@ public class LobbyState : NetworkBehaviour
             RedKills.Value = 0;
             BlueKills.Value = 0;
             WinnerTeamValue.Value = (byte)LobbyTeam.None;
+            PvpReturnToLobbyAtServerTime.Value = 0d;
+            PvpIsPreparingMatch.Value = false;
         }
+    }
+
+    public void BeginPvpSettlement(double returnAtServerTime)
+    {
+        if (IsServer && GameMode == LobbyGameMode.PVP && IsPvpMatchOver &&
+            PvpReturnToLobbyAtServerTime.Value == 0d)
+            PvpReturnToLobbyAtServerTime.Value = returnAtServerTime;
+    }
+
+    public void MarkPvpReturnUnavailable()
+    {
+        if (IsServer && GameMode == LobbyGameMode.PVP)
+            PvpReturnToLobbyAtServerTime.Value = -1d;
+    }
+
+    /// <summary>Clear only this match; the room owner, roster, teams and authenticated profile snapshots remain.</summary>
+    public void ResetPvpMatchForLobby()
+    {
+        if (!IsServer || GameMode != LobbyGameMode.PVP)
+            return;
+        RedKills.Value = 0;
+        BlueKills.Value = 0;
+        WinnerTeamValue.Value = (byte)LobbyTeam.None;
+        PvpReturnToLobbyAtServerTime.Value = 0d;
+        PvpIsPreparingMatch.Value = false;
+        IsStarted.Value = false;
+    }
+
+    public int GetPvpReturnSecondsRemaining()
+    {
+        if (!HasPvpSettlementCountdown || NetworkManager == null)
+            return 0;
+        return Math.Max(0, (int)Math.Ceiling(PvpReturnToLobbyAtServerTime.Value - NetworkManager.ServerTime.Time));
     }
 
     /// <summary>PVE 原有房间名设置接口。</summary>
@@ -230,7 +275,7 @@ public class LobbyState : NetworkBehaviour
     [ServerRpc(RequireOwnership = false)]
     public void RequestSetTeamServerRpc(byte requestedTeamValue, ServerRpcParams rpcParams = default)
     {
-        if (GameMode != LobbyGameMode.PVP || IsStarted.Value)
+        if (GameMode != LobbyGameMode.PVP || IsStarted.Value || PvpIsPreparingMatch.Value)
             return;
 
         LobbyTeam requestedTeam = (LobbyTeam)requestedTeamValue;
@@ -256,7 +301,7 @@ public class LobbyState : NetworkBehaviour
     [ServerRpc(RequireOwnership = false)]
     public void RequestSetCharacterServerRpc(byte characterIndex, ServerRpcParams rpcParams = default)
     {
-        if (GameMode != LobbyGameMode.PVP || IsStarted.Value || characterIndex >= PvpCharacterCount)
+        if (GameMode != LobbyGameMode.PVP || IsStarted.Value || PvpIsPreparingMatch.Value || characterIndex >= PvpCharacterCount)
             return;
 
         int playerIndex = FindPlayerIndex(rpcParams.Receive.SenderClientId);
@@ -283,6 +328,82 @@ public class LobbyState : NetworkBehaviour
 
         if (LobbyManager.Instance != null)
             LobbyManager.Instance.HandleDedicatedStartGameRequest(rpcParams.Receive.SenderClientId);
+    }
+
+    /// <summary>The backend ticket, rather than client-provided appearance fields, authorizes a saved-profile refresh.</summary>
+    [ServerRpc(RequireOwnership = false)]
+    public void RequestRefreshProfileServerRpc(string gameTicket, int requestId, int preparationId = 0, ServerRpcParams rpcParams = default)
+    {
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.HandlePvpProfileRefreshRequest(rpcParams.Receive.SenderClientId, gameTicket, requestId, preparationId);
+    }
+
+    [ClientRpc]
+    public void PrepareMatchProfilesClientRpc(int preparationId)
+    {
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.PrepareLocalPvpMatchProfile(preparationId);
+    }
+
+    [ClientRpc]
+    public void CancelMatchPreparationClientRpc(int preparationId)
+    {
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.CancelLocalPvpMatchPreparation(preparationId);
+    }
+
+    [ServerRpc(RequireOwnership = false)]
+    public void FailMatchPreparationServerRpc(int preparationId, string error, ServerRpcParams rpcParams = default)
+    {
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.HandlePvpMatchPreparationFailure(rpcParams.Receive.SenderClientId, preparationId, error);
+    }
+
+    public bool UpdatePvpPlayerProfile(ulong clientId, PlayerProfileData profile)
+    {
+        if (!IsServer || GameMode != LobbyGameMode.PVP || IsStarted.Value || profile == null)
+            return false;
+        int index = FindPlayerIndex(clientId);
+        if (index < 0) return false;
+        LobbyPlayerData player = PvpPlayers[index];
+        player.Appearance = profile.appearance.Sanitized();
+        player.Loadout = profile.loadout.Sanitized();
+        PvpPlayers[index] = player;
+        return true;
+    }
+
+    public void SendProfileRefreshResult(ulong clientId, int requestId, string error)
+    {
+        if (!IsServer || !IsSpawned) return;
+        var rpcParams = new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+        };
+        ProfileRefreshResultClientRpc(requestId, error ?? string.Empty, rpcParams);
+    }
+
+    public void SendStartGameResult(ulong clientId, string message)
+    {
+        if (!IsServer || !IsSpawned) return;
+        var rpcParams = new ClientRpcParams
+        {
+            Send = new ClientRpcSendParams { TargetClientIds = new[] { clientId } }
+        };
+        StartGameResultClientRpc(message ?? string.Empty, rpcParams);
+    }
+
+    [ClientRpc]
+    private void StartGameResultClientRpc(string message, ClientRpcParams rpcParams = default)
+    {
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.DisplayServerStartGameResult(message);
+    }
+
+    [ClientRpc]
+    private void ProfileRefreshResultClientRpc(int requestId, string error, ClientRpcParams rpcParams = default)
+    {
+        if (LobbyManager.Instance != null)
+            LobbyManager.Instance.CompleteLocalPvpProfileRefresh(requestId, error);
     }
 
     /// <summary>服务器登记一次有效击杀，先到 40 杀的队伍获胜。</summary>

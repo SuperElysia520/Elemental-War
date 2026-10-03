@@ -1,5 +1,5 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xmlns:uts="UnityEditor.Rendering.Toon" editor-extension-mode="False">
-    <Style src="project://database/Packages/com.unity.toonshader/Editor/Converter/converter_editor.uss" />
+    <Style src="converter_editor.uss" />
     <ui:VisualElement name="singleConverterVE" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); display: none;  max-height: 120px; min-height: 90px; padding-left: 19px; padding-right: 19px; padding-top: 20px; padding-bottom: 20px;">
         <ui:VisualElement name="backButtonVE" style="flex-grow: 1; background-color: rgba(0, 0, 0, 0); flex-direction: row; height: 0; flex-shrink: 1; max-height: 22px; display: flex; min-height: 22px; margin-bottom: 10px;">
             <ui:Button tabindex="-1" text="&lt; Back" display-tooltip-when-elided="true" name="backButton" style="width: 110px; margin-left: 3px; display: flex;" />
