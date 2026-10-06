@@ -23,6 +23,9 @@ public sealed class AccountClient : MonoBehaviour
     [Serializable] private class SaveRequest { public int revision; public CharacterAppearanceData appearance; public PvpLoadoutData loadout; }
     [Serializable] private class TicketResponse { public string ticket; public long expiresAtUnixSeconds; }
     [Serializable] private class TicketRequest { public string ticket; }
+    [Serializable] private class AvatarRequest { public byte avatarId; }
+    [Serializable] private class Reservation { public string matchId; }
+    [Serializable] private class MatchEvent { public string matchId; public int serverPort; public string @event; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => Instance = null;
@@ -114,9 +117,15 @@ public sealed class AccountClient : MonoBehaviour
     }
 
     public void RequestGameTicket(Action<string, string> completed)
+        => RequestGameTicketAt("/api/game-ticket", completed);
+
+    public void RequestMatchedGameTicket(Action<string, string> completed)
+        => RequestGameTicketAt("/api/party/ticket", completed);
+
+    private void RequestGameTicketAt(string route, Action<string, string> completed)
     {
         if (!BeginAuthenticated((success, error) => { if (!success) completed?.Invoke(null, error); })) return;
-        StartCoroutine(ClientRequest("POST", "/api/game-ticket", null, AccessToken, (body, status, error) =>
+        StartCoroutine(ClientRequest("POST", route, null, AccessToken, (body, status, error) =>
         {
             string ticket = null;
             if (error == "")
@@ -128,6 +137,42 @@ public sealed class AccountClient : MonoBehaviour
             Finish(error, null);
             completed?.Invoke(ticket, error);
         }));
+    }
+
+    public void SaveAvatar(byte avatarId, Action<bool, string> completed = null)
+    {
+        if (!BeginAuthenticated(completed)) return;
+        StartCoroutine(ClientRequest("PUT", "/api/profile/avatar", JsonUtility.ToJson(new AvatarRequest { avatarId = avatarId }), AccessToken,
+            (body, status, error) => { ApplyProfileResponse(body, status, ref error); Finish(error, completed); }));
+    }
+
+    /// <summary>Party polling uses the same validated endpoint and session without marking profile editing busy.</summary>
+    public IEnumerator PartyRequest(string method, string route, string body, Action<string, long, string> completed)
+    {
+        if (!IsAuthenticated) { completed("", 401, "请先登录账号。"); yield break; }
+        yield return ClientRequest(method, route, body, AccessToken, (response, status, error) =>
+        { if (status == 401) ClearSession(); completed(response, status, error); });
+    }
+
+    public static IEnumerator ReadSlotReservation(int port, Action<string, string> completed)
+    {
+        if (!AccountServiceSettings.TryGetEndpoint(true, out var endpoint, out var timeout, out var configurationError))
+        { completed(null, configurationError); yield break; }
+        yield return Send(endpoint, timeout, "GET", "/api/matches/server/" + port, null, "", (body, status, error) =>
+        {
+            Reservation reservation = null;
+            if (error == "" && !TryParse(body, out reservation)) error = "无法确认服务器预约状态。";
+            completed(error == "" ? reservation.matchId : null, error);
+        });
+    }
+
+    public static IEnumerator SendMatchServerEvent(string matchId, int port, string eventName, Action<string> completed)
+    {
+        if (!AccountServiceSettings.TryGetEndpoint(true, out var endpoint, out var timeout, out var configurationError))
+        { completed(configurationError); yield break; }
+        yield return Send(endpoint, timeout, "POST", "/api/matches/server",
+            JsonUtility.ToJson(new MatchEvent { matchId = matchId, serverPort = port, @event = eventName }), "",
+            (body, status, error) => completed(error));
     }
 
     public static IEnumerator ValidateServerSession(string token, Action<PlayerProfileData, string> completed)

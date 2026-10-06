@@ -22,7 +22,7 @@ public sealed partial class AccountStore : IDisposable
     }));
     private readonly string dummyHash;
     private Dictionary<string, Account> accounts;
-    private readonly Dictionary<string, (string SessionHash, DateTimeOffset Expires)> tickets = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string SessionHash, DateTimeOffset Expires, MatchAdmission? Match)> tickets = new(StringComparer.Ordinal);
 
     public AccountStore(IConfiguration configuration, IWebHostEnvironment environment)
     {
@@ -90,6 +90,11 @@ public sealed partial class AccountStore : IDisposable
         lock (gate) return Resolve(token).account.Profile;
     }
 
+    public Profile GetStoredProfile(string accountId)
+    {
+        lock (gate) return accounts.Values.Single(a => a.Id == accountId).Profile;
+    }
+
     public Profile SaveProfile(string token, SaveProfileRequest request)
     {
         lock (gate)
@@ -118,7 +123,19 @@ public sealed partial class AccountStore : IDisposable
         }
     }
 
-    public GameTicketResponse CreateGameTicket(string token)
+    public Profile SaveAvatar(string token, byte avatarId)
+    {
+        if (avatarId >= 32) throw new ApiException(400, "invalid_avatar", "头像选项无效。");
+        lock (gate)
+        {
+            var (key, account) = Resolve(token);
+            var profile = account.Profile with { AvatarId = avatarId, Revision = checked(account.Profile.Revision + 1) };
+            Persist(key, account with { Profile = profile });
+            return profile;
+        }
+    }
+
+    public GameTicketResponse CreateGameTicket(string token, MatchAdmission? match = null)
     {
         lock (gate)
         {
@@ -130,7 +147,7 @@ public sealed partial class AccountStore : IDisposable
                 tickets.Remove(key);
             var ticket = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
             var expires = now.AddSeconds(60);
-            tickets.Add(HashToken(ticket), (hash, expires));
+            tickets.Add(HashToken(ticket), (hash, expires, match));
             return new GameTicketResponse(ticket, expires.ToUnixTimeSeconds());
         }
     }
@@ -142,7 +159,7 @@ public sealed partial class AccountStore : IDisposable
             if (ticket == null || ticket.Length != 64 || !tickets.Remove(HashToken(ticket), out var entry)
                 || entry.Expires <= DateTimeOffset.UtcNow)
                 throw new ApiException(401, "invalid_ticket", "入场凭证已失效，请重新加入房间。");
-            return ResolveHash(entry.SessionHash).account.Profile;
+            return ResolveHash(entry.SessionHash).account.Profile with { Match = entry.Match };
         }
     }
 

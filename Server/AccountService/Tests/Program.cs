@@ -33,6 +33,8 @@ void Check(bool condition, string message)
     Console.WriteLine("PASS: " + message);
 }
 
+PartyRulesTests.Run(Check);
+
 var register = await Send("POST", "/api/auth/register", new { username = "CloudPlayer", password });
 Check(register.status == 200, "Register creates an account and authenticated session");
 string token = register.body["accessToken"]!.GetValue<string>();
@@ -64,6 +66,26 @@ var second = await Send("POST", "/api/auth/register", new { username = "AnotherP
 var secondToken = second.body["accessToken"]!.GetValue<string>();
 var secondProfile = await Send("GET", "/api/profile", token: secondToken);
 Check(secondProfile.body["accountId"]!.GetValue<string>() != accountId && secondProfile.body["revision"]!.GetValue<int>() == 0, "Accounts cannot read or overwrite each other's profile");
+Check((await Send("PUT", "/api/profile/avatar", new { avatarId = 3 }, secondToken)).body["avatarId"]!.GetValue<int>() == 3,
+    "A selected preset avatar is saved to the authenticated account");
+Check((await Send("PUT", "/api/profile/avatar", new { avatarId = 255 }, secondToken)).status == 400,
+    "Out-of-range avatar indices are rejected");
+Check((await Send("POST", "/api/party/create")).status == 401, "Unauthenticated party creation is rejected");
+string partyId = (await Send("POST", "/api/party/create", token: token)).body["party"]!["id"]!.GetValue<string>();
+Check((await Send("POST", "/api/party/join", new { partyId }, secondToken)).body["party"]!["members"]![1]!["profile"]!["avatarId"]!.GetValue<int>() == 3,
+    "Joined-party member metadata includes that member's own saved avatar");
+Check((await Send("POST", "/api/party/queue", token: token)).status == 409, "HTTP matching checks readiness on the server");
+Check((await Send("POST", "/api/party/queue", token: secondToken)).status == 403, "HTTP matching checks owner identity on the server");
+Check((await Send("POST", "/api/party/ready", new { ready = true }, secondToken)).status == 200,
+    "A member can prepare through the authenticated HTTP endpoint");
+Check((await Send("POST", "/api/party/queue", token: token)).body["party"]!["state"]!.GetValue<string>() == "Matching",
+    "Owner starts the queue after all members are ready");
+await Send("POST", "/api/party/ready", new { ready = false }, secondToken);
+Check((await Send("GET", "/api/party", token: token)).body["party"]!["state"]!.GetValue<string>() == "Waiting",
+    "Cancel Ready is visible to the owner");
+await Send("POST", "/api/party/leave", token: token);
+Check((await Send("GET", "/api/party", token: secondToken)).body["party"] == null,
+    "Owner Leave dissolves the HTTP party rather than transferring ownership");
 
 var issued = await Send("POST", "/api/game-ticket", token: token);
 var ticket = issued.body["ticket"]!.GetValue<string>();

@@ -52,6 +52,10 @@ public static class PvpMigrationWorkbench
             {
                 case "status": break;
                 case "inspect-open-scene": InspectOpenScenes(result); break;
+                case "audit-lobby-layout": Invoke("LobbyLayoutAudit", "Run"); break;
+                case "bind-party-lobby": Invoke("LobbyRedesignSetup", "BindExisting"); break;
+                case "audit-party-lobby": Invoke("LobbyRedesignSetup", "Audit"); break;
+                case "validate-party-json": Invoke("LobbyRedesignSetup", "ValidateWireJson"); break;
                 case "save-project": AssetDatabase.SaveAssets(); break;
                 case "refresh": AssetDatabase.Refresh(); break;
                 case "build-assets":
@@ -77,6 +81,8 @@ public static class PvpMigrationWorkbench
                     break;
                 case "build-client": Invoke("PvpMigrationBuildValidation", "BuildClient"); break;
                 case "build-server": Invoke("PvpMigrationBuildValidation", "BuildServer"); break;
+                case "build-lobby-client": Invoke("PvpMigrationBuildValidation", "BuildLobbyClient"); break;
+                case "build-lobby-server": Invoke("PvpMigrationBuildValidation", "BuildLobbyServer"); break;
                 case "setup-main-menu-character": Invoke("MainMenuCharacterSetup", "Apply"); break;
                 case "capture-main-menu": Invoke("MainMenuCharacterSetup", "CapturePreview"); break;
                 case "save-main-menu":

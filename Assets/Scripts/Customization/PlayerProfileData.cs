@@ -72,6 +72,23 @@ public class PlayerProfileData
     public string accountId;
     public string username;
     public int revision;
+    public byte avatarId;
+    public MatchAdmissionData match;
     public CharacterAppearanceData appearance = CharacterAppearanceData.Default;
     public PvpLoadoutData loadout = PvpLoadoutData.Default;
+}
+
+[Serializable]
+public sealed class MatchRosterMemberData
+{
+    public string accountId;
+    public byte team;
+}
+
+[Serializable]
+public sealed class MatchAdmissionData
+{
+    public string matchId;
+    public int serverPort;
+    public MatchRosterMemberData[] roster;
 }

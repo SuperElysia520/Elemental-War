@@ -13,8 +13,8 @@ public class LanDiscovery : MonoBehaviour
 {
     public const int DiscoveryPort = 47777;
     public const int DedicatedDiscoveryPortOffset = 41000;
-    // 3: 独立 GameLobby、保留房间的赛后返回，以及入房后重新批准账号配装。
-    public const int AccountProtocolVersion = 3;
+    // 4: 五人 HTTP 队伍匹配、服务端批准阵营及 NGO 匹配会话。
+    public const int AccountProtocolVersion = 4;
 
     // 广播/监听固定使用的标识头，用于过滤无关 UDP 包
     private const string MagicHeader = "FPS-LAN-DISC";

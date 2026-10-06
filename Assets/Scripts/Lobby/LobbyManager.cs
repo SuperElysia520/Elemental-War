@@ -38,7 +38,7 @@ public class LobbyManager : MonoBehaviour
 
     [Tooltip("同时开放的 PVP 房间槽位数量；需要启动相同数量、不同端口的服务器进程。")]
     [Range(1, 20)]
-    public int dedicatedServerRoomCount = 1;
+    public int dedicatedServerRoomCount = 10;
 
     [Header("广播")]
     public LanDiscovery discovery;
@@ -178,6 +178,7 @@ public class LobbyManager : MonoBehaviour
         LanJoin = 0,
         CreateDedicatedPvp = 1,
         JoinDedicatedPvp = 2,
+        JoinMatchedPvp = 3,
     }
 
     private bool m_IsInLobby;
@@ -196,6 +197,9 @@ public class LobbyManager : MonoBehaviour
     private string m_PendingRoomName;
     private LobbyGameMode m_PendingRoomMode = LobbyGameMode.PVE;
     private LobbyGameMode m_ActiveGameMode = LobbyGameMode.PVE;
+    private MatchAdmissionData m_MatchedAdmission;
+    private Coroutine m_MatchedStartRoutine;
+    private bool m_AbortingMatchedSession;
 
     private readonly Dictionary<ulong, ConnectionPayload> m_PendingConnections = new Dictionary<ulong, ConnectionPayload>();
     private readonly Dictionary<ulong, string> m_ClientNames = new Dictionary<ulong, string>();
@@ -454,6 +458,8 @@ public class LobbyManager : MonoBehaviour
         // Spawn serializes the initial NetworkVariables immediately. The creator must not receive the prefab's PVE default.
         if (m_IsDedicatedPvpServer)
             lobby.GameModeValue.Reset((byte)LobbyGameMode.PVP);
+        if (m_MatchedAdmission != null)
+            lobby.MatchedSessionId.Reset(new Unity.Collections.FixedString64Bytes(m_MatchedAdmission.matchId));
         networkObject.Spawn();
         return lobby;
     }
@@ -572,6 +578,9 @@ public class LobbyManager : MonoBehaviour
             out message);
     }
 
+    public bool TryJoinMatchedPvp(string address, int port, out string message)
+        => TryConnectDedicatedPvp(ConnectionOperation.JoinMatchedPvp, "团队对抗", address, port, out message);
+
     public bool StartDedicatedPvpRoomDiscovery(out string message)
     {
         message = string.Empty;
@@ -666,7 +675,9 @@ public class LobbyManager : MonoBehaviour
         m_RequestingTicket = true;
         m_IsConnecting = true;
         ConnectionStatus = message = "正在验证账号并连接 PVP 房间…";
-        account.RequestGameTicket((ticket, error) =>
+        Action<Action<string, string>> requestTicket = operation == ConnectionOperation.JoinMatchedPvp
+            ? account.RequestMatchedGameTicket : account.RequestGameTicket;
+        requestTicket((ticket, error) =>
         {
             if (this == null || attempt != m_ConnectionAttempt) return;
             m_RequestingTicket = false;
@@ -886,6 +897,12 @@ public class LobbyManager : MonoBehaviour
             string message = m_PvpStartPreparationError;
             if (string.IsNullOrEmpty(message) && m_PvpStartWaitingClients.Count > 0)
                 message = "全员角色与配装验证超时，开局已取消。请重新登录或加入房间后重试。";
+            if (string.IsNullOrEmpty(message) && lobby.IsMatchmaking)
+            {
+                bool confirmed = false;
+                yield return NotifyMatchedServer("started", lobby.MatchedSessionId.Value.ToString(), success => confirmed = success);
+                if (!confirmed) message = "匹配已取消或匹配服务不可用，请重新准备。";
+            }
             if (string.IsNullOrEmpty(message))
                 TryStartGameOnServer(out message, preparationComplete: true);
             ulong recipient = lobby.IsRoomOwner(requesterClientId) ? requesterClientId : lobby.RoomOwnerClientId.Value;
@@ -950,6 +967,8 @@ public class LobbyManager : MonoBehaviour
         LobbyGameMode gameMode = CurrentLobby.GameMode;
         if (gameMode == LobbyGameMode.PVP)
         {
+            if (CurrentLobby.IsMatchmaking && m_IsDedicatedPvpServer && (m_MatchedAdmission == null || CurrentLobby.PlayerCount != m_MatchedAdmission.roster.Length))
+            { message = "正在等待匹配名单中的全部玩家连接。"; return false; }
             if (!CurrentLobby.HasMinimumPvpTeams())
             {
                 message = "红队和蓝队都至少需要 1 名玩家";
@@ -1046,10 +1065,11 @@ public class LobbyManager : MonoBehaviour
             m_AuthenticatingClients[clientId] = response;
             StartCoroutine(AccountClient.RedeemServerTicket(payload.gameTicket, (profile, error) =>
             {
-                if (this == null || !m_AuthenticatingClients.Remove(clientId)) return;
+                if (this == null || !m_AuthenticatingClients.ContainsKey(clientId)) return;
                 if (profile == null)
                 {
                     RejectConnection(response, string.IsNullOrEmpty(error) ? "账号验证失败，请重新登录。" : error);
+                    m_AuthenticatingClients.Remove(clientId);
                     response.Pending = false;
                     return;
                 }
@@ -1058,15 +1078,14 @@ public class LobbyManager : MonoBehaviour
                     if (connectedProfile.accountId == profile.accountId)
                     {
                         RejectConnection(response, "此账号已在当前房间中。");
+                        m_AuthenticatingClients.Remove(clientId);
                         response.Pending = false;
                         return;
                     }
                 }
                 payload.playerName = profile.username;
                 payload.gameTicket = null;
-                ApprovalCheckDedicatedPvp(clientId, payload, response);
-                if (response.Approved) m_ClientProfiles[clientId] = profile;
-                response.Pending = false;
+                StartCoroutine(ApproveDedicatedReservation(clientId, payload, response, profile));
             }));
             return;
         }
@@ -1173,6 +1192,62 @@ public class LobbyManager : MonoBehaviour
         m_PendingConnections[clientId] = payload;
     }
 
+    private IEnumerator ApproveDedicatedReservation(ulong clientId, ConnectionPayload payload,
+        NetworkManager.ConnectionApprovalResponse response, PlayerProfileData profile)
+    {
+        string reservation = null, error = null;
+        yield return AccountClient.ReadSlotReservation(GetGamePort(), (id, message) => { reservation = id; error = message; });
+        if (!m_AuthenticatingClients.Remove(clientId)) yield break;
+        bool matched = (ConnectionOperation)payload.operation == ConnectionOperation.JoinMatchedPvp;
+        if (!string.IsNullOrEmpty(error)) RejectConnection(response, error);
+        else if (matched) ApprovalCheckMatched(clientId, payload, response, profile, reservation);
+        else if (!string.IsNullOrEmpty(reservation) || (CurrentLobby != null && CurrentLobby.IsMatchmaking))
+            RejectConnection(response, "此服务器已分配给匹配对局，请选择其他空闲房间。");
+        else ApprovalCheckDedicatedPvp(clientId, payload, response);
+        if (response.Approved)
+        {
+            foreach (PlayerProfileData existing in m_ClientProfiles.Values)
+                if (existing.accountId == profile.accountId)
+                { RejectConnection(response, "此账号已在当前房间中。"); m_PendingConnections.Remove(clientId); break; }
+            if (response.Approved) m_ClientProfiles[clientId] = profile;
+        }
+        response.Pending = false;
+    }
+
+    private void ApprovalCheckMatched(ulong clientId, ConnectionPayload payload,
+        NetworkManager.ConnectionApprovalResponse response, PlayerProfileData profile, string reservation)
+    {
+        MatchAdmissionData admission = profile.match;
+        if (m_IsDedicatedRoomResetting || SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby
+            || !string.Equals(payload.clientVersion, Application.version, StringComparison.Ordinal)
+            || admission == null || admission.serverPort != GetGamePort() || admission.matchId != reservation
+            || admission.roster == null || admission.roster.Length < 2 || admission.roster.Length > 10
+            || string.IsNullOrEmpty(reservation))
+        { RejectConnection(response, "匹配凭证无效或对局已取消，请重新匹配。"); return; }
+        if (CurrentLobby != null && (!CurrentLobby.IsMatchmaking || CurrentLobby.IsStarted.Value || CurrentLobby.PvpIsPreparingMatch.Value)
+            || m_PendingDedicatedCreatorClientId != LobbyState.NoRoomOwner
+            || m_MatchedAdmission != null && m_MatchedAdmission.matchId != admission.matchId)
+        { RejectConnection(response, "服务器已有其他对局，请重新匹配。"); return; }
+        bool found = false;
+        var accounts = new HashSet<string>();
+        int red = 0, blue = 0;
+        foreach (MatchRosterMemberData member in admission.roster)
+        {
+            if (member == null || string.IsNullOrEmpty(member.accountId) || !accounts.Add(member.accountId))
+            { RejectConnection(response, "匹配名单无效。"); return; }
+            if (member.team == (byte)LobbyTeam.Red) red++;
+            else if (member.team == (byte)LobbyTeam.Blue) blue++;
+            else { RejectConnection(response, "匹配阵营无效。"); return; }
+            if (member.accountId == profile.accountId) found = true;
+        }
+        if (!found || red < 1 || blue < 1 || red > 5 || blue > 5)
+        { RejectConnection(response, "账号不在有效匹配名单中。"); return; }
+        m_MatchedAdmission = admission;
+        response.Approved = true; response.CreatePlayerObject = false;
+        m_PendingConnections[clientId] = payload;
+        RefreshDedicatedPvpServerStatus();
+    }
+
     private static void RejectConnection(
         NetworkManager.ConnectionApprovalResponse response,
         string reason)
@@ -1205,7 +1280,8 @@ public class LobbyManager : MonoBehaviour
         {
             m_PendingConnections.Remove(clientId);
             ConnectionOperation operation = (ConnectionOperation)payload.operation;
-            if (m_IsDedicatedPvpServer && operation == ConnectionOperation.CreateDedicatedPvp)
+            if (m_IsDedicatedPvpServer && (operation == ConnectionOperation.CreateDedicatedPvp
+                || operation == ConnectionOperation.JoinMatchedPvp && CurrentLobby == null))
             {
                 if (!CreateDedicatedPvpLobby(clientId, payload))
                 {
@@ -1240,6 +1316,14 @@ public class LobbyManager : MonoBehaviour
 
             if (m_IsDedicatedPvpServer && !CurrentLobby.HasRoomOwner)
                 CurrentLobby.SetRoomOwner(clientId);
+
+            if (operation == ConnectionOperation.JoinMatchedPvp && m_MatchedAdmission != null)
+            {
+                string id = m_ClientProfiles[clientId].accountId;
+                foreach (MatchRosterMemberData member in m_MatchedAdmission.roster)
+                    if (member.accountId == id) CurrentLobby.SetMatchedTeam(clientId, (LobbyTeam)member.team);
+                if (m_MatchedStartRoutine == null) m_MatchedStartRoutine = StartCoroutine(StartMatchedSession());
+            }
 
             if (IsHost && discovery != null)
                 discovery.UpdateBroadcastInfo(CurrentLobby.PlayerCount, CurrentLobby.IsStarted.Value);
@@ -1283,10 +1367,13 @@ public class LobbyManager : MonoBehaviour
                 {
                     ResetDedicatedPvpRoom();
                 }
+                else if (wasRoomOwner && !CurrentLobby.IsMatchmaking)
+                {
+                    DissolveDedicatedRoom();
+                }
                 else if (wasRoomOwner && m_JoinOrder.Count > 0)
                 {
                     CurrentLobby.SetRoomOwner(m_JoinOrder[0]);
-                    Debug.Log("[Dedicated PVP] 房主已退出，权限转移给 client=" + m_JoinOrder[0]);
                 }
                 else if (wasRoomOwner)
                 {
@@ -1327,6 +1414,70 @@ public class LobbyManager : MonoBehaviour
         }
         // NGO 关闭期间不能再写 NetworkList；提前解绑断线回调，下一次建房/加入时会重新注册。
         RemoveNetworkCallbacks();
+    }
+
+    private IEnumerator StartMatchedSession()
+    {
+        yield return null;
+        string matchId = m_MatchedAdmission != null ? m_MatchedAdmission.matchId : "";
+        bool started = false;
+        try
+        {
+            float deadline = Time.unscaledTime + 50f;
+            while (!m_AbortingMatchedSession && CurrentLobby != null && m_MatchedAdmission != null
+                && CurrentLobby.PlayerCount < m_MatchedAdmission.roster.Length && Time.unscaledTime < deadline)
+                yield return null;
+            if (m_AbortingMatchedSession || CurrentLobby == null || m_MatchedAdmission == null
+                || CurrentLobby.PlayerCount != m_MatchedAdmission.roster.Length) yield break;
+            bool extended = false;
+            yield return NotifyMatchedServer("connected", matchId, success => extended = success);
+            if (!extended || CurrentLobby == null) yield break;
+            HandleDedicatedStartGameRequest(CurrentLobby.RoomOwnerClientId.Value);
+            while (m_PvpStartPreparationRoutine != null && !m_AbortingMatchedSession) yield return null;
+            started = CurrentLobby != null && CurrentLobby.IsStarted.Value;
+            if (started) yield return NotifyMatchedServer("started", matchId);
+        }
+        finally
+        {
+            m_MatchedStartRoutine = null;
+            if (!started && !string.IsNullOrEmpty(matchId) && !m_IsApplicationQuitting && !m_AbortingMatchedSession)
+                StartCoroutine(AbortMatchedSession(matchId));
+        }
+    }
+
+    private IEnumerator NotifyMatchedServer(string eventName, string id, Action<bool> completed = null)
+    {
+        string error = "";
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            yield return AccountClient.SendMatchServerEvent(id, GetGamePort(), eventName, message => error = message);
+            if (string.IsNullOrEmpty(error)) { completed?.Invoke(true); yield break; }
+            yield return new WaitForSecondsRealtime(1f);
+        }
+        Debug.LogWarning("[PVP Matchmaking] 对局状态同步失败：" + error);
+        completed?.Invoke(false);
+    }
+
+    private IEnumerator AbortMatchedSession(string id)
+    {
+        if (m_AbortingMatchedSession) yield break;
+        m_AbortingMatchedSession = true;
+        yield return NotifyMatchedServer("failed", id);
+        DissolveDedicatedRoom();
+        m_AbortingMatchedSession = false;
+    }
+
+    private void DissolveDedicatedRoom()
+    {
+        NetworkManager network = NetworkManager.Singleton;
+        if (network == null || !network.IsServer) return;
+        m_IsDedicatedRoomResetting = true;
+        if (CurrentLobby != null) CurrentLobby.SetRoomOwner(LobbyState.NoRoomOwner);
+        var clients = new List<ulong>(network.ConnectedClientsIds);
+        foreach (ulong id in clients)
+            if (id != NetworkManager.ServerClientId && network.ConnectedClients.ContainsKey(id))
+                network.DisconnectClient(id, "队伍或房间已解散，请返回大厅重新组队。");
+        if (CurrentLobby != null) ResetDedicatedPvpRoom();
     }
 
     private void ReturnPvpClientToLobbyIfNeeded(string source)
@@ -1667,6 +1818,8 @@ public class LobbyManager : MonoBehaviour
             return;
 
         LobbyState lobby = CurrentLobby;
+        if (m_MatchedAdmission != null)
+            StartCoroutine(NotifyMatchedServer("failed", m_MatchedAdmission.matchId));
         if (lobby != null)
         {
             lobby.OnChanged -= HandleCurrentLobbyChanged;
@@ -1679,6 +1832,7 @@ public class LobbyManager : MonoBehaviour
         }
 
         ResetSessionCollections();
+        m_MatchedAdmission = null;
         m_PendingDedicatedCreatorClientId = LobbyState.NoRoomOwner;
         m_IsInLobby = false;
         m_PendingRoomName = string.Empty;
@@ -1784,6 +1938,8 @@ public class LobbyManager : MonoBehaviour
         // Keeping IsStarted until loading completes prevents mid-transition team changes or another start request.
         if (CurrentLobby != null && CurrentLobby.IsSpawned)
             CurrentLobby.ResetPvpMatchForLobby();
+        if (CurrentLobby != null && CurrentLobby.IsMatchmaking && m_MatchedAdmission != null)
+            StartCoroutine(NotifyMatchedServer("completed", m_MatchedAdmission.matchId));
         RefreshDedicatedPvpServerStatus();
         OnLobbyChanged?.Invoke();
         Debug.Log("[Dedicated PVP] GameLobby 已就绪，保留房间=" + (CurrentLobby != null));
@@ -2159,7 +2315,7 @@ public class LobbyManager : MonoBehaviour
             return;
 
         bool hasRoom = CurrentLobby != null && CurrentLobby.GameMode == LobbyGameMode.PVP;
-        bool canCreate = !hasRoom && !m_IsDedicatedRoomResetting &&
+        bool canCreate = !hasRoom && m_MatchedAdmission == null && !m_IsDedicatedRoomResetting &&
                          m_PendingDedicatedCreatorClientId == LobbyState.NoRoomOwner;
         discovery.UpdateDedicatedPvpStatus(
             hasRoom ? CurrentLobby.GetRoomName() : string.Empty,

@@ -7,7 +7,7 @@ using UnityEngine;
 public static class PvpDedicatedServerBuilder
 {
     private const int ServerStartPort = 7777;
-    private const int ServerRoomCount = 1;
+    private const int ServerRoomCount = 10;
 
     private static string[] ServerScenes => GameFlowBuildScenes.Get(true);
     private static string[] ClientScenes => GameFlowBuildScenes.Get(false);

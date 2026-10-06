@@ -5,7 +5,7 @@
 ## 项目概况
 
 - 项目根目录：`E:/Unity资产/FPS`
-- 核查日期：2026-10-03；本轮基线提交：`3f386f4`；主菜单/独立大厅流程及用户制作的 GameLobby 随分支冲突修复纳入 main。编辑器原有未保存 GameStart 已在改动前保留完整副本。
+- 核查日期：2026-10-05；五人队伍匹配已接入，用户手工制作的 GameLobby 布局在接线前保存完整副本。上一轮主菜单/独立大厅流程及 GameLobby 随分支冲突修复纳入 main。
 - 第一人称射击游戏；单机玩法、局域网合作 PvE 和公网专用服务器 PvP 共存。`README.md` 的玩法简介未覆盖后续加入的 PvP 联机实现。
 
 ## 已确认环境
@@ -32,8 +32,18 @@
 - Build Settings 中启用 `GameStart`、`GameLobby`、`GamePVP`、`GamePVE`，入口为 `GameStart`。
 - PvE 由玩家 `StartHost()`，通过局域网 UDP 广播发现房间。
 - PvP 由云端每个房间槽位启动一个 `StartServer()` 进程；客户端向固定地址的状态查询端口发送 UDP 请求，再连接对应游戏端口。服务器通过 NGO 场景管理加载 `GamePVP`。
-- 当前场景与构建工具已调整为 1 个 PvP 试运行槽位：游戏 UDP 7777，查询 UDP 48777。公网地址保存在 `Assets/Scenes/GameStart.unity` 的 `LobbyManager.dedicatedServerAddress` 字段；迁移云厂商需更新此值和客户端构建。不要在上下文文档中复制公网地址。
-- `LobbyManager` 使用 `Application.version` 和账号发现协议版本 3 拦截旧客户端/服务器；PVP 通过一次性账号票据取得服务端批准的角色与配装快照。
+- 当前场景与构建工具默认使用 10 个 PvP 槽位：游戏 UDP 7777-7786，查询 UDP 48777-48786。公网地址保存在 `Assets/Scenes/GameStart.unity` 的 `LobbyManager.dedicatedServerAddress` 字段；迁移云厂商需更新此值和客户端构建。不要在上下文文档中复制公网地址。
+- `LobbyManager` 使用 `Application.version` 和账号发现协议版本 4 拦截旧客户端/服务器；PVP 通过一次性账号票据取得服务端批准的角色、配装和匹配名单快照。
+
+## 2026-10-05 五人队伍匹配
+
+- 大厅开始游戏自动创建最多五人的队伍，只展示自己的五个成员位置。房主开始匹配，其他成员准备/取消准备；两个已准备队伍可开局，允许人数不足五人且双方人数不同。服务端随机给整队分配红蓝阵营。
+- 现有 .NET AccountService 的 PartyStore / PartyMatchmaker 保存临时队伍和匹配预约，通过回环 UDP 查询空闲 NGO 专服。队伍不占用游戏进程，多场实际对局使用不同端口进程。临时状态在账号服务重启后清空。
+- GameLobby 新增 PartyLobbyUI 并绑定现有按钮、LobbyPanel、RoomPanel 和 RoomEntry。用户仍需手工补齐五个 PartyMemberSlot、模式/地图/状态文字、列表 Content、RoomEntry 五头像和预设头像选择面板；接线说明见 [LobbyMatchmakingFlow.md](LobbyMatchmakingFlow.md)。没有生成新布局。
+- 玩家 AvatarId 通过预设头像目录和账号后端持久保存。模式固定“团队对抗”，地图“测试地图1”。返回大厅退出队伍；房主离开或心跳超时解散队伍。
+- GameStart 的 MainMenuUI 新增自定义 PVP 按钮字段，需用户绑定；旧 LobbyMenuUI 保留用于红蓝双方十个位置和每边至少一人的自定义开局，PVE 入口保留。
+- 后端 62 项 HTTP/进程与队伍规则检查通过，包含并发匹配的两个独立服务器预约。实际 Unity 双客户端验证自动建队、匹配、相反阵营、GamePVP 玩家生成及主动退出回 GameLobby 已通过；手工显示对象未补齐，视觉验收待完成。当前构建位于 Builds/LobbyRedesign，历史交付包未更新。
+- 修复 JsonUtility 将 JSON null 队伍实例化为空对象造成的跳过建队问题，并开启组队客户端后台运行。当前没有 Unity MCP，使用固定操作白名单的本地编辑器工作台进行编译、接线和构建验证。
 
 ## 2026-10-03 独立前端场景
 

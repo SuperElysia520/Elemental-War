@@ -4,7 +4,9 @@ param(
     [ValidateSet('Production', 'Development')]
     [string]$Environment = 'Production',
     [string]$ListenUrl = 'http://127.0.0.1:5080',
-    [string]$TrustedProxyAddress = ''
+    [string]$TrustedProxyAddress = '',
+    [ValidateRange(1, 24535)][int]$MatchStartPort = 7777,
+    [ValidateRange(1, 20)][int]$MatchServerCount = 10
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,5 +24,5 @@ if (-not [string]::IsNullOrWhiteSpace($TrustedProxyAddress)) {
 else {
     Remove-Item Env:TrustedProxyAddresses__0 -ErrorAction SilentlyContinue
 }
-& dotnet $serviceDll --contentRoot $PSScriptRoot --urls $ListenUrl --AccountStorePath (Join-Path $accountDataDirectory 'accounts.json')
+& dotnet $serviceDll --contentRoot $PSScriptRoot --urls $ListenUrl --AccountStorePath (Join-Path $accountDataDirectory 'accounts.json') --PvpMatchmaking:StartPort=$MatchStartPort --PvpMatchmaking:ServerCount=$MatchServerCount
 exit $LASTEXITCODE

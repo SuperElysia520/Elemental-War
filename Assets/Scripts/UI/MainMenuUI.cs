@@ -5,10 +5,10 @@ using UnityEngine.SceneManagement;
 
 public class MainMenuUI : UIBase<MainMenuUI>
 {
-    public Button btnOnlinePVP;
-    public Button btnContinuePVE;
-    public Button btnNewGame;
-    public Button btnRead;
+    public Button btnEnterLobby;
+    public Button btnSinglePlayer;
+    public Button btnTrainingRange;
+    public Button btnCustomRoom;
     public Button btnCharacter;
     public Button btnClothes;
     public Button btnSettings;
@@ -22,13 +22,13 @@ public class MainMenuUI : UIBase<MainMenuUI>
     protected override void Awake()
     {
         base.Awake();
-        btnOnlinePVP.onClick.AddListener(ShowPVPLobbyMenu);
-        btnContinuePVE.onClick.AddListener(ShowPVELobbyMenu);
-        btnNewGame.onClick.AddListener(() =>
+        btnEnterLobby.onClick.AddListener(ShowPVPLobbyMenu);
+        btnSinglePlayer.onClick.AddListener(ShowPVELobbyMenu);
+        if (btnTrainingRange != null) btnTrainingRange.onClick.AddListener(ShowCustomRoom);
+        btnCustomRoom.onClick.AddListener(() =>
         {
             SceneManager.LoadScene("Game");
         });
-        btnRead.onClick.AddListener(ShowTipMenu);
         btnCharacter.onClick.AddListener(ShowCharacterMenu);
         btnClothes.onClick.AddListener(ShowCharacterMenu);
         btnSettings.onClick.AddListener(ShowTipMenu);
@@ -91,6 +91,17 @@ public class MainMenuUI : UIBase<MainMenuUI>
         });
     }
 
+    public void ShowCustomRoom()
+    {
+        if (PartyLobbyClient.Instance != null && PartyLobbyClient.Instance.Party != null)
+        { TipMenuUI.instance.EnterMessage("请先返回大厅离开匹配队伍，再进入自定义房间。"); return; }
+        Exit(() =>
+        {
+            LobbyMenuUI.instance.Enter(LobbyGameMode.PVP);
+            btnExit.gameObject.SetActive(false);
+        });
+    }
+
     private IEnumerator LoadMultiplayerLobby()
     {
         Time.timeScale = 1f;
@@ -110,11 +121,11 @@ public class MainMenuUI : UIBase<MainMenuUI>
 
     protected override void DisableButtons()
     {
-        btnOnlinePVP.interactable = false;
+        btnEnterLobby.interactable = false;
     }
 
     protected override void ResumeButtons()
     {
-        btnOnlinePVP.interactable = true;
+        btnEnterLobby.interactable = true;
     }
 }

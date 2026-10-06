@@ -12,6 +12,9 @@ builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow);
 builder.Services.AddSingleton<AccountStore>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<PartyStore>();
+builder.Services.AddHostedService<PartyMatchmaker>();
 var trustedProxies = builder.Configuration.GetSection("TrustedProxyAddresses").Get<string[]>() ?? [];
 if (trustedProxies.Length > 0)
 {
@@ -50,7 +53,14 @@ app.Use(async (context, next) =>
     context.Response.Headers.CacheControl = "no-store";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     bool loopback = context.Connection.RemoteIpAddress != null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
-    bool localServerEndpoint = loopback && (context.Request.Path == "/api/game-ticket/redeem" || context.Request.Path == "/api/auth/validate");
+    bool serverEndpoint = context.Request.Path.StartsWithSegments("/api/matches/server");
+    if (serverEndpoint && !loopback)
+    {
+        context.Response.StatusCode = 403;
+        await context.Response.WriteAsJsonAsync(new ApiError("local_server_only", "此接口仅供同机游戏服务器使用。"));
+        return;
+    }
+    bool localServerEndpoint = loopback && (context.Request.Path == "/api/game-ticket/redeem" || context.Request.Path == "/api/auth/validate" || serverEndpoint);
     if (!context.Request.IsHttps && !(app.Environment.IsDevelopment() && loopback) && !localServerEndpoint)
     {
         context.Response.StatusCode = 400;
@@ -87,9 +97,31 @@ app.MapPost("/api/auth/logout", (HttpContext context, AccountStore store) =>
 });
 app.MapPost("/api/auth/validate", (HttpContext context, AccountStore store) => store.GetProfile(ReadToken(context)));
 app.MapPost("/api/game-ticket", (HttpContext context, AccountStore store) => store.CreateGameTicket(ReadToken(context)));
-app.MapPost("/api/game-ticket/redeem", (RedeemTicketRequest body, AccountStore store) => store.RedeemGameTicket(body.Ticket));
+app.MapPost("/api/game-ticket/redeem", (RedeemTicketRequest body, AccountStore store, PartyStore parties) =>
+{
+    Profile profile = store.RedeemGameTicket(body.Ticket);
+    parties.ValidateAdmission(profile);
+    return profile;
+});
 app.MapGet("/api/profile", (HttpContext context, AccountStore store) => store.GetProfile(ReadToken(context)));
 app.MapPut("/api/profile", (SaveProfileRequest body, HttpContext context, AccountStore store) => store.SaveProfile(ReadToken(context), body));
+app.MapPut("/api/profile/avatar", (SaveAvatarRequest body, HttpContext context, AccountStore store) => store.SaveAvatar(ReadToken(context), body.AvatarId));
+app.MapGet("/api/party", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.Current(accounts.GetProfile(ReadToken(context))));
+app.MapGet("/api/party/rooms", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.List(accounts.GetProfile(ReadToken(context))));
+app.MapPost("/api/party/create", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.Create(accounts.GetProfile(ReadToken(context))));
+app.MapPost("/api/party/join", (JoinPartyRequest body, HttpContext context, AccountStore accounts, PartyStore parties) => parties.Join(accounts.GetProfile(ReadToken(context)), body.PartyId));
+app.MapPost("/api/party/ready", (ReadyPartyRequest body, HttpContext context, AccountStore accounts, PartyStore parties) => parties.Ready(accounts.GetProfile(ReadToken(context)), body.Ready));
+app.MapPost("/api/party/queue", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.Queue(accounts.GetProfile(ReadToken(context))));
+app.MapPost("/api/party/cancel", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.CancelQueue(accounts.GetProfile(ReadToken(context))));
+app.MapPost("/api/party/leave", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.Leave(accounts.GetProfile(ReadToken(context))));
+app.MapPost("/api/party/fail", (HttpContext context, AccountStore accounts, PartyStore parties) => parties.Fail(accounts.GetProfile(ReadToken(context))));
+app.MapPost("/api/party/ticket", (HttpContext context, AccountStore accounts, PartyStore parties) =>
+{
+    string token = ReadToken(context);
+    return accounts.CreateGameTicket(token, parties.Admission(accounts.GetProfile(token)));
+});
+app.MapGet("/api/matches/server/{port:int}", (int port, PartyStore parties) => parties.Reservation(port));
+app.MapPost("/api/matches/server", (MatchServerEvent body, PartyStore parties) => { parties.ServerEvent(body); return Results.NoContent(); });
 app.Run();
 
 static string ReadToken(HttpContext context)

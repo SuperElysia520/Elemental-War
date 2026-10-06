@@ -100,6 +100,8 @@ public class LobbyState : NetworkBehaviour
     /// <summary>Server-time deadline for the shared settlement screen; -1 indicates a return configuration error.</summary>
     public NetworkVariable<double> PvpReturnToLobbyAtServerTime = new NetworkVariable<double>(0d);
     public NetworkVariable<bool> PvpIsPreparingMatch = new NetworkVariable<bool>(false);
+    public NetworkVariable<FixedString64Bytes> MatchedSessionId = new NetworkVariable<FixedString64Bytes>();
+    public bool IsMatchmaking => !MatchedSessionId.Value.IsEmpty;
 
     /// <summary>本地 UI 刷新回调（成员、队伍、房间名或状态变化时触发）。</summary>
     public event Action OnChanged;
@@ -124,6 +126,7 @@ public class LobbyState : NetworkBehaviour
         WinnerTeamValue.OnValueChanged += HandleByteChanged;
         PvpReturnToLobbyAtServerTime.OnValueChanged += HandleDoubleChanged;
         PvpIsPreparingMatch.OnValueChanged += HandleBoolChanged;
+        MatchedSessionId.OnValueChanged += HandleStringChanged;
 
         if (LobbyManager.Instance != null)
             LobbyManager.Instance.RegisterLobby(this);
@@ -144,6 +147,7 @@ public class LobbyState : NetworkBehaviour
         WinnerTeamValue.OnValueChanged -= HandleByteChanged;
         PvpReturnToLobbyAtServerTime.OnValueChanged -= HandleDoubleChanged;
         PvpIsPreparingMatch.OnValueChanged -= HandleBoolChanged;
+        MatchedSessionId.OnValueChanged -= HandleStringChanged;
     }
 
     private void HandlePlayerNamesChanged(NetworkListEvent<FixedString64Bytes> changeEvent) => OnChanged?.Invoke();
@@ -271,11 +275,21 @@ public class LobbyState : NetworkBehaviour
         return HasRoomOwner && RoomOwnerClientId.Value == clientId;
     }
 
+    public void SetMatchedTeam(ulong clientId, LobbyTeam team)
+    {
+        if (!IsServer || !IsMatchmaking || IsStarted.Value) return;
+        int index = FindPlayerIndex(clientId);
+        if (index < 0) return;
+        LobbyPlayerData player = PvpPlayers[index];
+        player.Team = team;
+        PvpPlayers[index] = player;
+    }
+
     /// <summary>任意客户端请求给自己换队；服务器验证身份、状态和 5 人容量。</summary>
     [ServerRpc(RequireOwnership = false)]
     public void RequestSetTeamServerRpc(byte requestedTeamValue, ServerRpcParams rpcParams = default)
     {
-        if (GameMode != LobbyGameMode.PVP || IsStarted.Value || PvpIsPreparingMatch.Value)
+        if (GameMode != LobbyGameMode.PVP || IsMatchmaking || IsStarted.Value || PvpIsPreparingMatch.Value)
             return;
 
         LobbyTeam requestedTeam = (LobbyTeam)requestedTeamValue;

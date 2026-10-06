@@ -14,7 +14,12 @@ public sealed record Loadout(byte PrimaryWeaponId = 0, byte PrimarySightId = 0, 
     [JsonIgnore] public bool IsValid => PrimaryWeaponId is 0 or 2 && PrimarySightId <= 5 && SidearmSightId is 0 or 3;
 }
 
-public sealed record Profile(string AccountId, string Username, int Revision, Appearance Appearance, Loadout Loadout);
+public sealed record Profile(string AccountId, string Username, int Revision, Appearance Appearance, Loadout Loadout)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public MatchAdmission? Match { get; init; }
+    public byte AvatarId { get; init; }
+}
+public sealed record SaveAvatarRequest(byte AvatarId);
 public sealed record Credentials(string? Username, string? Password);
 public sealed record SaveProfileRequest(int Revision, Appearance? Appearance, Loadout? Loadout);
 public sealed record AuthResponse(string AccessToken, long ExpiresAtUnixSeconds, Profile Profile);

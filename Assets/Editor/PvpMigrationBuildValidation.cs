@@ -9,7 +9,9 @@ public static class PvpMigrationBuildValidation
 {
     public static void BuildClient() => Build(false);
     public static void BuildServer() => Build(true);
-    private static void Build(bool server)
+    public static void BuildLobbyClient() => Build(false, "LobbyRedesign");
+    public static void BuildLobbyServer() => Build(true, "LobbyRedesign");
+    private static void Build(bool server, string destination = "RifleGirlMigration")
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode) throw new InvalidOperationException("Exit Play Mode before building.");
         string[] scenes = GameFlowBuildScenes.Get(server);
@@ -18,7 +20,7 @@ public static class PvpMigrationBuildValidation
         var previousSubtarget = EditorUserBuildSettings.standaloneBuildSubtarget;
         var previousHttp = PlayerSettings.insecureHttpOption;
         string folder = server ? "Server" : "Client";
-        string output = "Builds/RifleGirlMigration/" + folder + "/" + (server ? "FPS_PVP_Server.exe" : "FPS.exe");
+        string output = "Builds/" + destination + "/" + folder + "/" + (server ? "FPS_PVP_Server.exe" : "FPS.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(output));
         try
         {
@@ -35,7 +37,9 @@ public static class PvpMigrationBuildValidation
             };
             BuildReport report = BuildPipeline.BuildPlayer(options);
             string evidence = $"Result: {report.summary.result}\nErrors: {report.summary.totalErrors}\nWarnings: {report.summary.totalWarnings}\nSize: {report.summary.totalSize}\nDuration: {report.summary.totalTime}\nOutput: {Path.GetFullPath(output)}\n";
-            File.WriteAllText("tmp/PvpMigration/build-" + folder.ToLowerInvariant() + ".txt", evidence);
+            string evidenceDirectory = "tmp/" + (destination == "LobbyRedesign" ? destination : "PvpMigration");
+            Directory.CreateDirectory(evidenceDirectory);
+            File.WriteAllText(evidenceDirectory + "/build-" + folder.ToLowerInvariant() + ".txt", evidence);
             if (report.summary.result != BuildResult.Succeeded) throw new InvalidOperationException(evidence);
             Debug.Log("[PVP Migration] " + evidence);
         }

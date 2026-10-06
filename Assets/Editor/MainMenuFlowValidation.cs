@@ -166,8 +166,8 @@ public static class MainMenuFlowValidation
         Check(menus.Length == 1 && menus[0].gameObject.activeInHierarchy, "主菜单启动并显示");
         if (!Application.CanStreamedLevelBeLoaded(GameFlowScenes.MultiplayerLobby))
         {
-            Require(menus[0].btnOnlinePVP != null, "主菜单进入大厅按钮未绑定。");
-            menus[0].btnOnlinePVP.onClick.Invoke();
+            Require(menus[0].btnEnterLobby != null, "主菜单进入大厅按钮未绑定。");
+            menus[0].btnEnterLobby.onClick.Invoke();
             yield return new WaitForSecondsRealtime(0.9f);
             Check(SceneManager.GetActiveScene().path == ScenePath, "大厅未制作时保留主菜单场景");
             TipMenuUI tip = TipMenuUI.instance;
