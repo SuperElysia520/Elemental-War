@@ -26,7 +26,9 @@
 | Login Panel | 登录表单根对象 |
 | Registration Panel | 注册表单根对象 |
 | Ready Panel | 已登录账号展示/进入游戏区域 |
-| Loading Panel | 可选的忙碌/加载提示根对象 |
+| Loading Panel | 忙碌/加载提示根对象，当前绑定现有 LoadingPanel |
+| Loading Progress Image | `LoadingPanel/ProgressBar/FillImage` 的 Image，水平从左填充 |
+| Loading Progress Text | `LoadingPanel/Progress` 的旧版 uGUI Text，显示 `0%`–`100%` |
 | Login Username / Login Password | 登录的旧版 uGUI `InputField` 输入框 |
 | Registration Username / Registration Password / Confirm Password | 注册的三个旧版 uGUI `InputField` 输入框 |
 | Username Text / Uid Text | 账号名与 UID 的旧版 uGUI `Text` 文字 |
@@ -47,6 +49,10 @@
 
 密码输入框自动使用密码显示模式，提交及表单切换时清空密码。账号名在未注册跳转和注册成功后自动带入对应表单。
 
+2026-10-29：登录后点击“进入游戏”（或启用自动进入）时，显示现有 LoadingPanel 并从 0% 开始异步加载 GameStart。控制器读取 `AsyncOperation.progress`，将激活前的 0–0.9 映射为 0–100%；LoginUI 同步更新 Image 的 `fillAmount` 和百分比文字。场景就绪后先显示一帧 100%，再允许激活。进度不受 `Time.timeScale` 影响，加载期间阻止重复进入和切换账号；回到 Login 后重新从 0% 开始。此进度只表示场景加载，云端账号档案仍由到达 GameStart 后的 `GameStartProfileLoader` 读取。
+
+现有场景已接好这两个引用。重新接线可使用 `Tools > FPS > Login > Bind Loading Progress`；工具备份当前 Login 后仅绑定已有控件并初始化 0%，不创建 UI 或调整布局。
+
 `Ready Panel` 仅在存在有效会话时显示。公共背景图、版权文字、音乐等放在这些切换面板之外。主提示文字需要放在始终可见的对象上，或在 `Additional Message Texts` 为各个面板提供文字。切换账号按钮可放在 Ready Panel 中。
 
 UID 使用后端稳定的 `accountId`；UGS 模式使用 Unity Authentication 的 Player ID，不假设其格式或长度，也不使用截图中的数字 1。界面不需要本机注册标记。
@@ -56,6 +62,8 @@ UID 使用后端稳定的 `accountId`；UGS 模式使用 Unity Authentication �
 不用 `LoginUI` 时，可直接通过脚本调用 `LoginSceneController.Login(username, password)`、`Register(username, password, confirmation)`、`EnterGame()`、`SwitchAccount()`、`ShowLogin()` 和 `ShowRegistration()`。
 
 可读取 `ViewState`、`Message`、`SuggestedUsername`、`IsBusy`、`AccountId`、`Username`，订阅 C# `Changed` 事件。Inspector 事件包括 `On Show Login`、`On Show Registration`、`On Show Ready`、`On Message Changed(string)`、`On Busy Changed(bool)`、`On Registration Required(string username)`、`On Login Succeeded(string accountId)`。动态参数应选择 Inspector 的 Dynamic 项。
+
+场景加载进度通过只读属性 `LoadingProgress`（0–1）和 C# `LoadingProgressChanged(float)` 事件提供；进度事件独立于表单状态通知，避免加载时每帧重刷全部账号 UI。
 
 `On Show Login/Registration/Ready` 只用于状态切换时显示面板或播放动画；使用 `LoginUI` 自动控制面板时可以全部留空。登录、注册、进入游戏、切换账号等操作应绑定按钮的 `Button.onClick`。控制器现在会阻止通知回调重入这些操作，并且同一面板内的提示更新不会重复触发显示事件。
 
@@ -85,6 +93,8 @@ UGS 模式中密码不由游戏保存；SDK 管理会话缓存，注册完成、
 令牌沿用现有架构，只保存在本次进程内存，不写 PlayerPrefs 或存档；关闭游戏后需要重新登录。云端注册记录和用户档案持续保留。
 
 ## 验证
+
+2026-10-29：Unity Editor 编译通过；现有离线 fake UGS 传输配合真实 Login → GameStart → GameLobby 流程完成 94 项功能检查，其中新增 8 项覆盖加载控件接线、0% 初始化、未登录拦截、LoadingPanel 显隐、重复操作拦截、真实进度与 Image/文字同步、暂停时间下完成及激活前 100%、返回后重置。验证记录两条与修改前基线一致的 Visual Scripting 插件异常，因此完整回归报告的 `success` 为 false，不能视为全套零错误通过。场景、账号配置、环境变量和测试替身已还原，编辑器退出 Play Mode。证据：`tmp/LoginLoading/runtime-validation.json`、`baseline-editor-status.json`；场景原始副本为同目录 `login-before.unity`。未执行客户端构建或真实云账号联调。
 
 2026-10-20：雨云部署简化后，Unity 编译完成、真实 Login → GameStart 回归 44 项通过，测试退出后恢复环境变量和 HTTP 设置。验证器现显式设置自动进场分支，并临时允许后台运行后还原，避免用户在场景选择手动“进入游戏”时导致自动测试等待超时。产品中的 `enterGameAfterLogin` 设置和用户场景均未修改。
 

@@ -116,6 +116,8 @@
 
 ## 代码风格与验证
 
+- 2026-10-29：Login → GameStart 场景加载由 `LoginSceneController` 协程读取真实 `AsyncOperation.progress`，归一化为 `LoadingProgress`（0–1），`LoginUI` 通过独立进度事件更新已有 `LoadingPanel/ProgressBar/FillImage` 和 `Progress`。显示 100% 一帧后允许激活，不改变手动“进入游戏”设置；云档案读取仍在 GameStart。场景已接好引用，可用 `Tools > FPS > Login > Bind Loading Progress` 备份并重新绑定。Unity 编译通过，离线真实场景回归的 94 项功能检查（新增 8 项加载检查）完成；完整报告仍记录两条修改前已有的 Visual Scripting 异常，`success=false`，详见 `tmp/LoginLoading/runtime-validation.json` 和 [LoginSceneFlow.md](LoginSceneFlow.md)。
+
 - 第一方脚本多数无命名空间，使用 `MonoBehaviour`/`NetworkBehaviour`，公开字段作 Inspector 配置，并使用中文注释及 UI 文本。
 - 项目已安装 Unity Test Framework；本次新增实际账号 HTTP 集成测试、Windows 部署脚本验证及仅 Editor/Development 启用的双客户端 PVP 流程检查，尚无 CI 配置。
 - 最终 Windows 客户端与 Dedicated Server 构建均 0 错误，本机两客户端真实联机流程 `6b46b942` 两端 PASS、0 运行错误；包括账号存档、配装同步、开火换弹、击杀复活及返回大厅。尚未执行雨云公网部署或跨电脑公网验收。当前会话没有 Unity Editor MCP，通过固定操作白名单的编辑器工作台调用实际构建与校验。

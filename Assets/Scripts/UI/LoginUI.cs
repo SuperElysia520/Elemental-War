@@ -10,6 +10,9 @@ public sealed class LoginUI : MonoBehaviour
     public GameObject registrationPanel;
     public GameObject readyPanel;
     public GameObject loadingPanel;
+    [Header("场景加载进度")]
+    public UnityEngine.UI.Image loadingProgressImage;
+    public UnityEngine.UI.Text loadingProgressText;
     [Header("登录输入")]
     public UnityEngine.UI.InputField loginUsername;
     public UnityEngine.UI.InputField loginPassword;
@@ -32,12 +35,28 @@ public sealed class LoginUI : MonoBehaviour
     private void Awake()
     {
         controller = GetComponent<LoginSceneController>();
+        if (loadingProgressImage != null)
+        {
+            loadingProgressImage.type = UnityEngine.UI.Image.Type.Filled;
+            loadingProgressImage.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+            loadingProgressImage.fillOrigin = (int)UnityEngine.UI.Image.OriginHorizontal.Left;
+        }
         if (loginPassword != null) loginPassword.contentType = UnityEngine.UI.InputField.ContentType.Password;
         if (registrationPassword != null) registrationPassword.contentType = UnityEngine.UI.InputField.ContentType.Password;
         if (confirmPassword != null) confirmPassword.contentType = UnityEngine.UI.InputField.ContentType.Password;
     }
-    private void OnEnable() { controller.Changed += Refresh; Refresh(); }
-    private void OnDisable() { controller.Changed -= Refresh; ClearPasswords(); }
+    private void OnEnable()
+    {
+        controller.Changed += Refresh;
+        controller.LoadingProgressChanged += RefreshLoadingProgress;
+        Refresh();
+    }
+    private void OnDisable()
+    {
+        controller.Changed -= Refresh;
+        controller.LoadingProgressChanged -= RefreshLoadingProgress;
+        ClearPasswords();
+    }
 
     public void Login()
     {
@@ -70,6 +89,7 @@ public sealed class LoginUI : MonoBehaviour
         SetPanel(registrationPanel, state == LoginViewState.Registration);
         SetPanel(readyPanel, state == LoginViewState.Ready);
         SetPanel(loadingPanel, state == LoginViewState.Loading);
+        RefreshLoadingProgress(controller.LoadingProgress);
         if (usernameText != null) usernameText.text = controller.Username;
         if (uidText != null) uidText.text = controller.AccountId == "" ? "" : "UID: " + controller.AccountId;
         if (messageText != null) messageText.text = controller.Message;
@@ -77,6 +97,16 @@ public sealed class LoginUI : MonoBehaviour
             foreach (UnityEngine.UI.Text label in additionalMessageTexts) if (label != null) label.text = controller.Message;
         if (requestButtons != null)
             foreach (UnityEngine.UI.Button button in requestButtons) if (button != null) button.interactable = !controller.IsBusy;
+    }
+
+    private void RefreshLoadingProgress(float progress)
+    {
+        if (loadingProgressImage != null) loadingProgressImage.fillAmount = progress;
+        if (loadingProgressText != null)
+        {
+            string percentage = Mathf.FloorToInt(progress * 100f) + "%";
+            if (loadingProgressText.text != percentage) loadingProgressText.text = percentage;
+        }
     }
 
     private void ClearPasswords()

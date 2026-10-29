@@ -161,6 +161,17 @@ public static class UgsFlowValidation
         Check(flow != null && account.UsesUgs && !account.SupportsRegistrationLookup && !account.HasSession && account.Profile == null,
             "真实 Login 场景选择 UGS 且没有预先创建会话或读取存档");
         var ui = flow.GetComponent<LoginUI>();
+        var progressImage = SceneComponent<UnityEngine.UI.Image>("Canvas/LoadingPanel/ProgressBar/FillImage");
+        var progressText = SceneComponent<UnityEngine.UI.Text>("Canvas/LoadingPanel/Progress");
+        Check(ui != null && ui.loadingProgressImage == progressImage && ui.loadingProgressText == progressText &&
+            progressImage.type == UnityEngine.UI.Image.Type.Filled && progressImage.fillMethod == UnityEngine.UI.Image.FillMethod.Horizontal &&
+            progressImage.fillOrigin == (int)UnityEngine.UI.Image.OriginHorizontal.Left,
+            "真实 LoadingPanel 已绑定水平从左填充的 Image 和百分比文字");
+        Check(!ui.loadingPanel.activeSelf && flow.LoadingProgress == 0f && progressImage.fillAmount == 0f && progressText.text == "0%",
+            "Login 启动隐藏 LoadingPanel，加载进度重置为 0%");
+        flow.EnterGame();
+        Check(flow.ViewState == LoginViewState.Login && !flow.IsBusy && !ui.loadingPanel.activeSelf,
+            "未登录点击进入游戏不会开始加载或打开 LoadingPanel");
         var registrationUsername = SceneComponent<UnityEngine.UI.InputField>("Canvas/RegistrationPanel/UserName/InputField");
         var registrationPassword = SceneComponent<UnityEngine.UI.InputField>("Canvas/RegistrationPanel/UserPassword/InputField");
         var confirmationPassword = SceneComponent<UnityEngine.UI.InputField>("Canvas/RegistrationPanel/UserConfirmPassword/InputField");
@@ -277,8 +288,42 @@ public static class UgsFlowValidation
         Action<PlayerProfileData> observe = p => { if (p != null && SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) prematureProfile = true; };
         account.ProfileChanged += observe;
         var loadGate = gateway.HoldLoad();
-        flow.EnterGame();
-        while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
+        float lastProgress = 0f;
+        bool validProgress = true, progressUiMatches = true, completedBeforeActivation = false;
+        int progressUpdates = 0;
+        Action<float> loadingChanged = value =>
+        {
+            progressUpdates++;
+            validProgress &= value >= lastProgress && value >= 0f && value <= 1f;
+            progressUiMatches &= ui.loadingPanel.activeInHierarchy && Mathf.Approximately(progressImage.fillAmount, value) &&
+                progressText.text == Mathf.FloorToInt(value * 100f) + "%";
+            lastProgress = value;
+            if (value == 1f) completedBeforeActivation = SceneManager.GetActiveScene().name == GameFlowScenes.Login && flow.IsBusy;
+        };
+        flow.LoadingProgressChanged += loadingChanged;
+        float savedTimeScale = Time.timeScale;
+        try
+        {
+            Time.timeScale = 0f;
+            flow.EnterGame();
+            Check(flow.IsBusy && flow.ViewState == LoginViewState.Loading && ui.loadingPanel.activeInHierarchy &&
+                !ui.loginPanel.activeSelf && !ui.readyPanel.activeSelf && flow.LoadingProgress == 0f && progressText.text == "0%",
+                "进入游戏立即显示 LoadingPanel 和 0%，隐藏登录及账号面板");
+            flow.EnterGame();
+            flow.SwitchAccount();
+            flow.ShowLogin();
+            Check(flow.IsBusy && flow.ViewState == LoginViewState.Loading && account.HasSession,
+                "加载期间重复进入、切换账号及返回表单不会打断加载");
+            while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
+        }
+        finally
+        {
+            Time.timeScale = savedTimeScale;
+            if (flow != null) flow.LoadingProgressChanged -= loadingChanged;
+        }
+        Check(progressUpdates > 0 && validProgress && lastProgress == 1f && progressUiMatches,
+            "真实异步场景加载进度单调到达 100%，Image 和百分比文字同步更新");
+        Check(completedBeforeActivation, "暂停时间仍可异步加载，Login 显示 100% 后才激活 GameStart");
         GameStartProfileLoader loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         while (gateway.LoadCalls == 0) yield return null;
         Check(loader != null && !loader.IsReady && account.Profile == null && account.IsBusy,
@@ -427,6 +472,9 @@ public static class UgsFlowValidation
         while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
         yield return null;
         flow = UnityEngine.Object.FindObjectOfType<LoginSceneController>();
+        ui = flow.GetComponent<LoginUI>();
+        Check(flow.LoadingProgress == 0f && ui.loadingProgressImage.fillAmount == 0f && ui.loadingProgressText.text == "0%" &&
+            !ui.loadingPanel.activeSelf, "返回 Login 后隐藏 LoadingPanel 并重置进度，支持再次进入");
         flow.SwitchAccount();
         while (flow.IsBusy) yield return null;
         Check(!account.HasSession && account.Profile == null && account.AccountId == "" && !gateway.IsSignedIn,

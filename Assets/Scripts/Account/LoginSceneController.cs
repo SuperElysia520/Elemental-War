@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
@@ -30,8 +31,11 @@ public sealed class LoginSceneController : MonoBehaviour
     public string AccountId => account != null && account.HasSession ? account.AccountId : "";
     public string Username => account != null && account.HasSession ? account.Username : "";
     public bool IsBusy => processing || (account != null && account.IsBusy);
+    public float LoadingProgress { get; private set; }
     public event Action Changed;
+    public event Action<float> LoadingProgressChanged;
     private AccountClient account;
+    private AsyncOperation sceneLoadOperation;
     private bool processing;
     private bool notifyingView;
     private bool viewInitialized;
@@ -39,6 +43,12 @@ public sealed class LoginSceneController : MonoBehaviour
     private void Awake() => account = AccountClient.EnsureInstance();
     private void OnEnable() => account.StateChanged += Publish;
     private void OnDisable() => account.StateChanged -= Publish;
+    private void OnDestroy()
+    {
+        // An interrupted owner must not leave Unity's async-operation queue blocked.
+        if (sceneLoadOperation != null && !sceneLoadOperation.isDone)
+            sceneLoadOperation.allowSceneActivation = true;
+    }
     private void Start()
     {
         Time.timeScale = 1f;
@@ -136,14 +146,56 @@ public sealed class LoginSceneController : MonoBehaviour
         if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MainMenu, out string error))
         { SetView(LoginViewState.Ready, error); return; }
         processing = true;
+        SetLoadingProgress(0f);
         SetView(LoginViewState.Loading, "正在进入游戏…");
-        SceneManager.LoadSceneAsync(GameFlowScenes.MainMenu, LoadSceneMode.Single);
+        StartCoroutine(LoadGameScene());
+    }
+
+    private IEnumerator LoadGameScene()
+    {
+        // Give LoadingPanel a frame to render before starting scene loading.
+        yield return null;
+        try
+        {
+            sceneLoadOperation = SceneManager.LoadSceneAsync(GameFlowScenes.MainMenu, LoadSceneMode.Single);
+            if (sceneLoadOperation == null) throw new InvalidOperationException("未能创建场景加载任务。");
+            sceneLoadOperation.allowSceneActivation = false;
+        }
+        catch (Exception exception)
+        {
+            processing = false;
+            SetLoadingProgress(0f);
+            SetView(LoginViewState.Ready, "进入游戏失败，请重试。" + exception.Message);
+            yield break;
+        }
+
+        while (sceneLoadOperation.progress < 0.9f)
+        {
+            // Unity stops at 0.9 until activation is allowed; normalize to 0–100%.
+            SetLoadingProgress(sceneLoadOperation.progress / 0.9f);
+            yield return null;
+        }
+
+        SetLoadingProgress(1f);
+        // Render 100% before activating GameStart and destroying the Login scene.
+        yield return null;
+        sceneLoadOperation.allowSceneActivation = true;
+        yield return sceneLoadOperation;
+    }
+
+    private void SetLoadingProgress(float progress)
+    {
+        progress = Mathf.Clamp01(progress);
+        if (LoadingProgress == progress) return;
+        LoadingProgress = progress;
+        LoadingProgressChanged?.Invoke(progress);
     }
 
     public void SwitchAccount()
     {
         if (IsBusy || notifyingView || !IsLoginScene()) return;
         processing = true;
+        SetLoadingProgress(0f);
         SetView(LoginViewState.Loading, "正在退出当前账号…");
         account.Logout((ok, error) =>
         {

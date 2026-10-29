@@ -95,6 +95,7 @@ public static class PvpMigrationWorkbench
                     break;
                 case "validate-main-menu-runtime": Invoke("MainMenuFlowValidation", "Run"); break;
                 case "setup-login-scene": Invoke("LoginSceneSetup", "Apply"); break;
+                case "bind-login-loading": Invoke("LoginSceneSetup", "BindLoadingProgress"); break;
                 case "open-backend-setup": Invoke("HostedBackendSetupWindow", "Open"); break;
                 case "install-ugs-packages": Invoke("UgsPackageInstaller", "Install"); break;
                 case "open-ugs-setup": Invoke("UgsBackendSetupWindow", "Open"); break;

@@ -10,6 +10,42 @@ using UnityEngine.SceneManagement;
 /// <summary>Add invisible login components to the open, authored scene; never creates panels or changes their layout.</summary>
 public static class LoginSceneSetup
 {
+    [MenuItem("Tools/FPS/Login/Bind Loading Progress")]
+    public static void BindLoadingProgress()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling)
+            throw new InvalidOperationException("请在停止运行、编译完成后执行加载进度接线。");
+        Scene scene = SceneManager.GetActiveScene();
+        if (scene.path != "Assets/Scenes/Login.unity")
+            throw new InvalidOperationException("请先打开你制作的 Login 场景。");
+        var views = scene.GetRootGameObjects().SelectMany(root => root.GetComponentsInChildren<LoginUI>(true)).ToArray();
+        if (views.Length != 1 || views[0].loadingPanel == null)
+            throw new InvalidOperationException("需要唯一的 LoginUI，并已绑定 Loading Panel。");
+        LoginUI ui = views[0];
+        Transform fill = ui.loadingPanel.transform.Find("ProgressBar/FillImage");
+        Transform label = ui.loadingPanel.transform.Find("Progress");
+        var image = fill != null ? fill.GetComponent<UnityEngine.UI.Image>() : null;
+        var text = label != null ? label.GetComponent<UnityEngine.UI.Text>() : null;
+        if (image == null || text == null)
+            throw new InvalidOperationException("LoadingPanel 下需要现有 ProgressBar/FillImage 的 Image 和 Progress 的 Text。");
+
+        string backup = Path.GetFullPath(Path.Combine(Application.dataPath, "../tmp/LoginLoading/login-before-binding-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".unity"));
+        Directory.CreateDirectory(Path.GetDirectoryName(backup));
+        if (!EditorSceneManager.SaveScene(scene, backup, true)) throw new IOException("无法备份 Login 场景，未修改。");
+        Undo.RecordObjects(new UnityEngine.Object[] { ui, image, text }, "Bind Login Loading Progress");
+        ui.loadingProgressImage = image;
+        ui.loadingProgressText = text;
+        image.type = UnityEngine.UI.Image.Type.Filled;
+        image.fillMethod = UnityEngine.UI.Image.FillMethod.Horizontal;
+        image.fillOrigin = (int)UnityEngine.UI.Image.OriginHorizontal.Left;
+        image.fillAmount = 0f;
+        text.text = "0%";
+        Undo.FlushUndoRecordObjects();
+        EditorSceneManager.MarkSceneDirty(scene);
+        if (!EditorSceneManager.SaveScene(scene)) throw new IOException("无法保存 Login 场景。");
+        Debug.Log("[LoginSceneSetup] 已绑定现有加载进度 Image 和百分比文字；备份：" + backup);
+    }
+
     [MenuItem("Tools/FPS/Login/Bind Scene And Configure Startup")]
     public static void Apply()
     {
