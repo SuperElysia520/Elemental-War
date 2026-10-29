@@ -8,8 +8,13 @@ $config = Read-FpsHttpsConfiguration $StateDirectory -AllowAdministrator
 foreach ($name in @($config.taskName, $config.renewalTaskName)) {
     if (Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue) { throw ('Task already exists; inspect it before replacing: ' + $name) }
 }
-$dotnet = (Get-Command dotnet -ErrorAction Stop).Source
-if (-not ((& $dotnet --list-runtimes) -match '^Microsoft.AspNetCore.App 10\.')) { throw 'Install the Windows x64 .NET 10 ASP.NET Core Runtime first.' }
+$serviceExe = Join-Path $config.publishDirectory 'AccountService.exe'
+$runtimeConfig = Get-Content -Raw -LiteralPath (Join-Path $config.publishDirectory 'AccountService.runtimeconfig.json') | ConvertFrom-Json
+$selfContained = (Test-Path -LiteralPath $serviceExe) -and ($null -ne $runtimeConfig.runtimeOptions.includedFrameworks)
+if (-not $selfContained) {
+    $dotnet = (Get-Command dotnet -ErrorAction Stop).Source
+    if (-not ((& $dotnet --list-runtimes) -match '^Microsoft.AspNetCore.App 10\.')) { throw 'Install the Windows x64 .NET 10 ASP.NET Core Runtime first.' }
+}
 $credential = Get-Credential -UserName $config.windowsAccount -Message 'Windows task identity: use the same account that initialized the certificate. Password is stored by Windows Task Scheduler, not in scripts.'
 if ($null -eq $credential) { throw 'Task registration canceled.' }
 $accountSid = (New-Object Security.Principal.NTAccount($credential.UserName)).Translate([Security.Principal.SecurityIdentifier]).Value
@@ -17,7 +22,12 @@ if ($accountSid -ne $config.ownerSid) { throw 'Task account must match the ACME 
 $tls = Join-Path $config.stateDirectory 'tls'
 $serviceArguments = '--contentRoot "{0}" --environment Production --AccountStorePath "{1}" --Kestrel:Endpoints:Internal:Url http://127.0.0.1:5080 --Kestrel:Endpoints:PublicHttps:Url https://0.0.0.0:443 --Kestrel:Endpoints:PublicHttps:Certificate:Path "{2}" --Kestrel:Endpoints:PublicHttps:Certificate:KeyPath "{3}"' -f `
     $config.publishDirectory,(Join-Path $config.stateDirectory 'data/accounts.json'),(Join-Path $tls 'fullchain.pem'),(Join-Path $tls 'private.key')
-$serviceAction = New-ScheduledTaskAction -Execute $dotnet -Argument ('"' + (Join-Path $config.publishDirectory 'AccountService.dll') + '" ' + $serviceArguments) -WorkingDirectory $config.publishDirectory
+if ($selfContained) {
+    $serviceAction = New-ScheduledTaskAction -Execute $serviceExe -Argument $serviceArguments -WorkingDirectory $config.publishDirectory
+}
+else {
+    $serviceAction = New-ScheduledTaskAction -Execute $dotnet -Argument ('"' + (Join-Path $config.publishDirectory 'AccountService.dll') + '" ' + $serviceArguments) -WorkingDirectory $config.publishDirectory
+}
 $principal = New-ScheduledTaskPrincipal -UserId $config.windowsAccount -LogonType Password -RunLevel Limited
 $serviceSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew -StartWhenAvailable
 $serviceTask = New-ScheduledTask -Action $serviceAction -Trigger (New-ScheduledTaskTrigger -AtStartup) -Principal $principal -Settings $serviceSettings

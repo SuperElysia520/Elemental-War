@@ -97,8 +97,6 @@ public sealed class PvpMigrationSmokeProbe : MonoBehaviour
 
     private IEnumerator Run()
     {
-        yield return WaitFor(() => LobbyManager.Instance != null && NetworkManager.Singleton != null, 20, "bootstrap");
-        lobby = LobbyManager.Instance;
         account = AccountClient.EnsureInstance();
         string username = Environment.GetEnvironmentVariable("FPS_PROBE_USERNAME");
         string password = Environment.GetEnvironmentVariable("FPS_PROBE_PASSWORD");
@@ -111,6 +109,15 @@ public sealed class PvpMigrationSmokeProbe : MonoBehaviour
         password = null;
         yield return WaitFor(() => done, 35, "account-login");
         Require(success && account.IsAuthenticated, "account-login", operationError);
+
+        if (SceneManager.GetActiveScene().name == GameFlowScenes.Login)
+        {
+            yield return SceneManager.LoadSceneAsync(GameFlowScenes.MainMenu);
+            yield return WaitFor(() => LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene()) != null &&
+                LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene()).IsReady, 35, "main-menu-profile");
+        }
+        yield return WaitFor(() => LobbyManager.Instance != null && NetworkManager.Singleton != null && !account.IsBusy, 20, "bootstrap");
+        lobby = LobbyManager.Instance;
 
         expectedAppearance = AppearanceFor(role);
         expectedLoadout = LoadoutFor(role);

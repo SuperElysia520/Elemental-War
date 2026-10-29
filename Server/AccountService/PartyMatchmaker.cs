@@ -6,7 +6,8 @@ using System.Text.Json;
 namespace Fps.AccountService;
 
 /// <summary>Probes the existing discovery ports on the same host before allocating an actual gameplay process.</summary>
-public sealed class PartyMatchmaker(PartyStore parties, AccountStore accounts, ILogger<PartyMatchmaker> logger) : BackgroundService
+public sealed class PartyMatchmaker(PartyStore parties, AccountStore accounts, ILogger<PartyMatchmaker> logger,
+    UgsBridgeOptions options, IServiceProvider services) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -17,7 +18,8 @@ public sealed class PartyMatchmaker(PartyStore parties, AccountStore accounts, I
             {
                 var probes = Enumerable.Range(parties.StartPort, parties.ServerCount).Select(p => Probe(p, stoppingToken));
                 int[] idle = (await Task.WhenAll(probes)).Where(p => p != 0).ToArray();
-                parties.RefreshProfiles(accounts.GetStoredProfile);
+                Func<string, Profile> readProfile = options.Enabled ? services.GetRequiredService<UgsProfiles>().GetCached : accounts.GetStoredProfile;
+                parties.RefreshProfiles(readProfile, skipUnavailable: options.Enabled);
                 parties.MatchQueued(idle);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
@@ -41,7 +43,7 @@ public sealed class PartyMatchmaker(PartyStore parties, AccountStore accounts, I
             using JsonDocument document = JsonDocument.Parse(text[prefix.Length..]);
             JsonElement root = document.RootElement;
             return root.GetProperty("gamePort").GetInt32() == port && root.GetProperty("canCreate").GetBoolean()
-                && !root.GetProperty("hasRoom").GetBoolean() && root.GetProperty("accountProtocolVersion").GetInt32() == 4 ? port : 0;
+                && !root.GetProperty("hasRoom").GetBoolean() && root.GetProperty("accountProtocolVersion").GetInt32() == 5 ? port : 0;
         }
         catch (Exception error) when (error is SocketException or OperationCanceledException or JsonException or KeyNotFoundException)
         { return 0; }

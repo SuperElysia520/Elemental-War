@@ -33,6 +33,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
 
     private AccountClient account;
     private LobbyManager boundLobby;
+    private PartyLobbyClient boundParty;
     private bool eventsBound;
     private bool leavingScene;
     private string actionStatus = "";
@@ -97,6 +98,11 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
             boundLobby = LobbyManager.Instance;
             boundLobby.OnLobbyChanged += RefreshPresentation;
         }
+        if (boundParty == null)
+        {
+            boundParty = PartyLobbyClient.EnsureInstance();
+            boundParty.Changed += RefreshPresentation;
+        }
     }
 
     private void UnbindEvents()
@@ -109,6 +115,8 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
         eventsBound = false;
         if (boundLobby != null) boundLobby.OnLobbyChanged -= RefreshPresentation;
         boundLobby = null;
+        if (boundParty != null) boundParty.Changed -= RefreshPresentation;
+        boundParty = null;
     }
 
     /// <summary>独立房间列表入口；大厅开始游戏由 StartParty 自动建队。</summary>
@@ -123,9 +131,10 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
     {
         if (!ValidatePartyEntry()) return;
         if (!partyUI.ValidateParty(out string error)) { SetStatus(error); return; }
-        SetHomeVisible(false);
+        actionStatus = "";
         PartyLobbyClient client = PartyLobbyClient.EnsureInstance();
-        if (client.Party != null) partyUI.ShowParty(); else partyUI.CreateAndShow();
+        if (client.Party != null) { SetHomeVisible(false); partyUI.ShowParty(); }
+        else partyUI.CreateAndShow();
         UnlockCursor();
     }
 
@@ -136,6 +145,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
         if (!account.IsAuthenticated)
         { actionStatus = "请先登录账号。"; OpenCustomization(); return false; }
         if (account.IsBusy) { SetStatus("正在同步账号，请稍候。"); return false; }
+        if (boundParty != null && boundParty.IsBusy) { RefreshPresentation(); return false; }
         if (LobbyManager.Instance == null) { SetStatus("请从 GameStart 进入大厅，确保 NetworkManager / LobbyManager 已就绪。"); return false; }
         if (LobbyManager.Instance.IsInLobby && LobbyManager.Instance.CurrentLobby != null && !LobbyManager.Instance.CurrentLobby.IsMatchmaking)
         { SetStatus("请先退出当前自定义房间。"); return false; }
@@ -150,7 +160,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
     }
 
     public void HideHomeForParty() => SetHomeVisible(false);
-    public void DisplayStatus(string message) => SetStatus(message);
+    public void DisplayStatus(string message) { actionStatus = message ?? ""; RefreshPresentation(); }
 
     /// <summary>GameStart 自定义房间同步进入此场景时，继续显示原有双方十人选队界面。</summary>
     private void OpenCustomRoom()
@@ -220,6 +230,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
     public void ReturnToMainMenu()
     {
         if (leavingScene) return;
+        if (boundParty != null && boundParty.IsBusy) { SetStatus("正在处理队伍请求，请稍候。"); return; }
         if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MainMenu, out string error))
         {
             SetStatus(error);
@@ -267,11 +278,12 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
         string playerName = account.IsAuthenticated ? account.Profile.username : "未登录";
         if (tmpPlayerName != null) tmpPlayerName.text = playerName;
         LobbyManager lobby = LobbyManager.Instance;
+        bool partyBusy = boundParty != null && boundParty.IsBusy;
         bool hasRoom = lobby != null && (lobby.IsInLobby || lobby.IsConnecting);
-        if (btnStartGame != null) btnStartGame.interactable = !leavingScene && (!account.IsBusy || hasRoom);
-        if (btnRoomList != null) btnRoomList.interactable = !leavingScene && !account.IsBusy;
-        if (btnReturnMainMenu != null) btnReturnMainMenu.interactable = !leavingScene;
-        bool canEdit = !leavingScene && CanOpenCustomization(out _);
+        if (btnStartGame != null) btnStartGame.interactable = !leavingScene && !partyBusy && (!account.IsBusy || hasRoom);
+        if (btnRoomList != null) btnRoomList.interactable = !leavingScene && !account.IsBusy && !partyBusy;
+        if (btnReturnMainMenu != null) btnReturnMainMenu.interactable = !leavingScene && !partyBusy;
+        bool canEdit = !leavingScene && !partyBusy && CanOpenCustomization(out _);
         if (btnCharacter != null) btnCharacter.interactable = canEdit;
         if (btnClothes != null) btnClothes.interactable = canEdit;
         if (btnLoadout != null) btnLoadout.interactable = canEdit;
@@ -280,6 +292,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
         string message;
         if (leavingScene) message = "正在返回主菜单…";
         else if (account.IsBusy) message = "正在同步账号…";
+        else if (partyBusy) message = boundParty.Party == null ? "正在创建队伍…" : "正在处理队伍请求…";
         else if (!string.IsNullOrEmpty(account.LastError)) message = account.LastError;
         else if (lobby != null && (lobby.IsInLobby || lobby.IsConnecting)
             && !string.IsNullOrWhiteSpace(lobby.ConnectionStatus)) message = lobby.ConnectionStatus;

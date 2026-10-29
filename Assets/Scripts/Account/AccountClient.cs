@@ -4,13 +4,19 @@ using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
 
-/// <summary>Account credentials and sessions remain in memory; the server owns the saved profile.</summary>
-public sealed class AccountClient : MonoBehaviour
+/// <summary>Passwords are never persisted by the game; the selected backend owns player profiles.</summary>
+public sealed partial class AccountClient : MonoBehaviour
 {
     public static AccountClient Instance { get; private set; }
-    public bool IsAuthenticated => !string.IsNullOrEmpty(AccessToken) && Profile != null && DateTimeOffset.UtcNow.ToUnixTimeSeconds() < expiresAtUnixSeconds;
+    public bool UsesUgs { get; private set; }
+    public bool SupportsRegistrationLookup => !UsesUgs;
+    public bool HasSession => UsesUgs ? HasUgsSession : !string.IsNullOrEmpty(AccessToken) && DateTimeOffset.UtcNow.ToUnixTimeSeconds() < expiresAtUnixSeconds;
+    public bool IsAuthenticated => HasSession && Profile != null;
+    public string AccountId { get; private set; } = "";
+    public string Username { get; private set; } = "";
     public bool IsBusy { get; private set; }
-    public string AccessToken { get; private set; } = "";
+    private string legacyAccessToken = "";
+    public string AccessToken { get => UsesUgs ? UgsAccessToken : legacyAccessToken; private set => legacyAccessToken = value; }
     public string LastError { get; private set; } = "";
     public PlayerProfileData Profile { get; private set; }
     public event Action StateChanged;
@@ -18,6 +24,9 @@ public sealed class AccountClient : MonoBehaviour
     private long expiresAtUnixSeconds;
 
     [Serializable] private class Credentials { public string username; public string password; }
+    [Serializable] private class RegistrationCheckRequest { public string username; }
+    [Serializable] private class RegistrationCheckResponse { public bool registered; }
+    [Serializable] private class RegistrationResponse { public string username; }
     [Serializable] private class AuthResponse { public string accessToken; public long expiresAtUnixSeconds; public PlayerProfileData profile; }
     [Serializable] private class ErrorResponse { public string code; public string message; }
     [Serializable] private class SaveRequest { public int revision; public CharacterAppearanceData appearance; public PvpLoadoutData loadout; }
@@ -28,7 +37,7 @@ public sealed class AccountClient : MonoBehaviour
     [Serializable] private class MatchEvent { public string matchId; public int serverPort; public string @event; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-    private static void ResetStatics() => Instance = null;
+    private static void ResetStatics() { Instance = null; UgsGatewayFactory = null; }
 
     public static AccountClient EnsureInstance()
     {
@@ -44,37 +53,85 @@ public sealed class AccountClient : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+        UsesUgs = AccountServiceSettings.SelectedBackend == AccountBackend.UnityGamingServices;
         DontDestroyOnLoad(gameObject);
     }
 
     private void OnDestroy()
     {
+        DisposeUgs();
         if (Instance == this) Instance = null;
         AccessToken = "";
         Profile = null;
     }
 
     public void Register(string username, string password, Action<bool, string> completed = null)
-        => Authenticate("register", username, password, completed);
+    {
+        if (UsesUgs) RegisterUgs(username, password, completed);
+        else Authenticate("register", username, password, completed);
+    }
 
     public void Login(string username, string password, Action<bool, string> completed = null)
         => Authenticate("login", username, password, completed);
 
-    private void Authenticate(string operation, string username, string password, Action<bool, string> completed)
+    /// <summary>Authenticate in Login; defer applying the profile until GameStart requests it.</summary>
+    public void LoginSession(string username, string password, Action<bool, string> completed = null)
+        => Authenticate("login", username, password, completed, false);
+
+    public void CheckRegistration(string username, Action<bool, bool, string> completed)
     {
+        if (UsesUgs)
+        { completed?.Invoke(false, false, "UGS 不提供公开的注册状态查询，请直接登录或点击注册。"); return; }
+        if (!Begin((ok, error) => { if (!ok) completed?.Invoke(false, false, error); })) return;
+        StartCoroutine(ClientRequest("POST", "/api/auth/check-registration",
+            JsonUtility.ToJson(new RegistrationCheckRequest { username = username }), "", (body, status, error) =>
+        {
+            bool registered = false;
+            if (error == "")
+            {
+                if (!TryParse(body, out RegistrationCheckResponse response) || !body.Contains("\"registered\""))
+                    error = "账号服务返回的注册状态不完整。";
+                else registered = response.registered;
+            }
+            Finish(error, null);
+            completed?.Invoke(error == "", registered, error);
+        }));
+    }
+
+    /// <summary>Registration alone never creates a client session or applies user data.</summary>
+    public void RegisterAccount(string username, string password, Action<bool, string> completed = null)
+    {
+        if (UsesUgs) { RegisterUgs(username, password, completed); return; }
+        if (!Begin(completed)) return;
+        StartCoroutine(ClientRequest("POST", "/api/auth/register-account",
+            JsonUtility.ToJson(new Credentials { username = username, password = password }), "", (body, status, error) =>
+        {
+            if (error == "" && (!TryParse(body, out RegistrationResponse response) || string.IsNullOrEmpty(response.username)))
+                error = "账号服务返回的注册结果不完整。";
+            Finish(error, completed);
+        }));
+    }
+
+    private void Authenticate(string operation, string username, string password, Action<bool, string> completed, bool applyProfile = true)
+    {
+        if (UsesUgs) { AuthenticateUgs(operation, username, password, completed, applyProfile); return; }
         if (!Begin(completed)) return;
         var payload = JsonUtility.ToJson(new Credentials { username = username, password = password });
         StartCoroutine(ClientRequest("POST", "/api/auth/" + operation, payload, "", (body, status, error) =>
         {
             if (error == "")
             {
-                if (!TryParse(body, out AuthResponse response) || response.profile == null || string.IsNullOrEmpty(response.accessToken))
+                if (!TryParse(body, out AuthResponse response) || response.profile == null || string.IsNullOrEmpty(response.profile.accountId)
+                    || string.IsNullOrEmpty(response.profile.username) || string.IsNullOrEmpty(response.accessToken)
+                    || response.expiresAtUnixSeconds <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
                     error = "账号服务返回的数据不完整。";
                 else
                 {
                     AccessToken = response.accessToken;
                     expiresAtUnixSeconds = response.expiresAtUnixSeconds;
-                    Profile = response.profile;
+                    AccountId = response.profile.accountId;
+                    Username = response.profile.username;
+                    Profile = applyProfile ? response.profile : null;
                     ProfileChanged?.Invoke(Profile);
                 }
             }
@@ -84,7 +141,9 @@ public sealed class AccountClient : MonoBehaviour
 
     public void RefreshProfile(Action<bool, string> completed = null)
     {
-        if (!BeginAuthenticated(completed)) return;
+        if (UsesUgs) { LoadUgsProfile(completed); return; }
+        if (!HasSession) { RejectMissingSession(completed); return; }
+        if (!Begin(completed)) return;
         StartCoroutine(ClientRequest("GET", "/api/profile", null, AccessToken, (body, status, error) =>
         {
             ApplyProfileResponse(body, status, ref error);
@@ -94,6 +153,7 @@ public sealed class AccountClient : MonoBehaviour
 
     public void SaveProfile(CharacterAppearanceData appearance, PvpLoadoutData loadout, Action<bool, string> completed = null)
     {
+        if (UsesUgs) { SaveUgsProfile(appearance, loadout, completed); return; }
         if (!BeginAuthenticated(completed)) return;
         var payload = JsonUtility.ToJson(new SaveRequest { revision = Profile.revision, appearance = appearance.Sanitized(), loadout = loadout.Sanitized() });
         StartCoroutine(ClientRequest("PUT", "/api/profile", payload, AccessToken, (body, status, error) =>
@@ -105,6 +165,7 @@ public sealed class AccountClient : MonoBehaviour
 
     public void Logout(Action<bool, string> completed = null)
     {
+        if (UsesUgs) { LogoutUgs(completed); return; }
         if (!Begin(completed)) return;
         var token = AccessToken;
         ClearSession();
@@ -124,6 +185,7 @@ public sealed class AccountClient : MonoBehaviour
 
     private void RequestGameTicketAt(string route, Action<string, string> completed)
     {
+        if (UsesUgs) { RequestUgsGameTicket(route == "/api/party/ticket", completed); return; }
         if (!BeginAuthenticated((success, error) => { if (!success) completed?.Invoke(null, error); })) return;
         StartCoroutine(ClientRequest("POST", route, null, AccessToken, (body, status, error) =>
         {
@@ -141,6 +203,7 @@ public sealed class AccountClient : MonoBehaviour
 
     public void SaveAvatar(byte avatarId, Action<bool, string> completed = null)
     {
+        if (UsesUgs) { SaveUgsAvatar(avatarId, completed); return; }
         if (!BeginAuthenticated(completed)) return;
         StartCoroutine(ClientRequest("PUT", "/api/profile/avatar", JsonUtility.ToJson(new AvatarRequest { avatarId = avatarId }), AccessToken,
             (body, status, error) => { ApplyProfileResponse(body, status, ref error); Finish(error, completed); }));
@@ -149,6 +212,7 @@ public sealed class AccountClient : MonoBehaviour
     /// <summary>Party polling uses the same validated endpoint and session without marking profile editing busy.</summary>
     public IEnumerator PartyRequest(string method, string route, string body, Action<string, long, string> completed)
     {
+        if (UsesUgs) { yield return UgsPartyRequest(method, route, body, completed); yield break; }
         if (!IsAuthenticated) { completed("", 401, "请先登录账号。"); yield break; }
         yield return ClientRequest(method, route, body, AccessToken, (response, status, error) =>
         { if (status == 401) ClearSession(); completed(response, status, error); });
@@ -156,9 +220,10 @@ public sealed class AccountClient : MonoBehaviour
 
     public static IEnumerator ReadSlotReservation(int port, Action<string, string> completed)
     {
-        if (!AccountServiceSettings.TryGetEndpoint(true, out var endpoint, out var timeout, out var configurationError))
+        bool ugsServer = AccountServiceSettings.SelectedBackend == AccountBackend.UnityGamingServices;
+        if (!TryGetPvpServerEndpoint(out var endpoint, out var timeout, out var configurationError))
         { completed(null, configurationError); yield break; }
-        yield return Send(endpoint, timeout, "GET", "/api/matches/server/" + port, null, "", (body, status, error) =>
+        yield return Send(endpoint, timeout, "GET", (ugsServer ? "/api/ugs" : "/api") + "/matches/server/" + port, null, "", (body, status, error) =>
         {
             Reservation reservation = null;
             if (error == "" && !TryParse(body, out reservation)) error = "无法确认服务器预约状态。";
@@ -168,9 +233,10 @@ public sealed class AccountClient : MonoBehaviour
 
     public static IEnumerator SendMatchServerEvent(string matchId, int port, string eventName, Action<string> completed)
     {
-        if (!AccountServiceSettings.TryGetEndpoint(true, out var endpoint, out var timeout, out var configurationError))
+        bool ugsServer = AccountServiceSettings.SelectedBackend == AccountBackend.UnityGamingServices;
+        if (!TryGetPvpServerEndpoint(out var endpoint, out var timeout, out var configurationError))
         { completed(configurationError); yield break; }
-        yield return Send(endpoint, timeout, "POST", "/api/matches/server",
+        yield return Send(endpoint, timeout, "POST", (ugsServer ? "/api/ugs" : "/api") + "/matches/server",
             JsonUtility.ToJson(new MatchEvent { matchId = matchId, serverPort = port, @event = eventName }), "",
             (body, status, error) => completed(error));
     }
@@ -183,7 +249,14 @@ public sealed class AccountClient : MonoBehaviour
 
     private static IEnumerator ServerRequest(string route, string body, string token, Action<PlayerProfileData, string> completed)
     {
-        if (!AccountServiceSettings.TryGetEndpoint(true, out var endpoint, out var timeout, out var configurationError))
+        if (AccountServiceSettings.SelectedBackend == AccountBackend.UnityGamingServices)
+        {
+            // UGS long-lived player JWTs are never accepted on the game transport or sent to legacy APIs.
+            if (route != "/api/game-ticket/redeem" || !string.IsNullOrEmpty(token))
+            { completed?.Invoke(null, "UGS 专服只接受一次性入场凭证。"); yield break; }
+            route = "/api/ugs/game-ticket/redeem";
+        }
+        if (!TryGetPvpServerEndpoint(out var endpoint, out var timeout, out var configurationError))
         { completed?.Invoke(null, configurationError); yield break; }
         yield return Send(endpoint, timeout, "POST", route, body, token, (response, status, error) =>
         {
@@ -248,12 +321,17 @@ public sealed class AccountClient : MonoBehaviour
     {
         if (!IsAuthenticated)
         {
-            LastError = "请先登录账号。";
-            StateChanged?.Invoke();
-            completed?.Invoke(false, LastError);
+            RejectMissingSession(completed);
             return false;
         }
         return Begin(completed);
+    }
+
+    private void RejectMissingSession(Action<bool, string> completed)
+    {
+        LastError = "请先登录账号并载入用户数据。";
+        StateChanged?.Invoke();
+        completed?.Invoke(false, LastError);
     }
 
     private void ApplyProfileResponse(string body, long status, ref string error)
@@ -262,6 +340,8 @@ public sealed class AccountClient : MonoBehaviour
         if (error != "") return;
         if (!TryParse(body, out PlayerProfileData profile) || string.IsNullOrEmpty(profile.accountId))
         { error = "档案数据不完整，未应用更改。"; return; }
+        if (profile.accountId != AccountId)
+        { error = "档案与当前登录账号不一致，未应用更改。"; return; }
         Profile = profile;
         ProfileChanged?.Invoke(Profile);
     }
@@ -271,6 +351,7 @@ public sealed class AccountClient : MonoBehaviour
         AccessToken = "";
         expiresAtUnixSeconds = 0;
         Profile = null;
+        AccountId = Username = "";
         ProfileChanged?.Invoke(null);
     }
 

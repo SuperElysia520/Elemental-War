@@ -88,7 +88,8 @@ public sealed class PartyLobbyClient : MonoBehaviour
         Changed?.Invoke();
     }
 
-    public void Create() => Command("/api/party/create");
+    public void Create() => Create(null);
+    public void Create(Action<bool> completed) => Command("/api/party/create", null, completed);
     public void Join(string id) => Command("/api/party/join", JsonUtility.ToJson(new JoinRequest { partyId = id }));
     public void ToggleReady() => Command("/api/party/ready", JsonUtility.ToJson(new ReadyRequest { ready = !LocalReady }));
     public void StartMatching() => Command("/api/party/queue");
@@ -100,6 +101,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
     {
         if (IsBusy || !Account.IsAuthenticated) { Status = !Account.IsAuthenticated ? "请先登录账号。" : "队伍请求正在处理中。"; Changed?.Invoke(); completed?.Invoke(false); return; }
         IsBusy = true;
+        Status = route == "/api/party/create" ? "正在创建队伍…" : "正在处理队伍请求…";
         Changed?.Invoke();
         StartCoroutine(SendCommand(route, body, completed));
     }
@@ -115,6 +117,8 @@ public sealed class PartyLobbyClient : MonoBehaviour
         {
             if (generation != identityGeneration) return;
             success = ApplyState(response, error);
+            if (success && route == "/api/party/create" && Party == null)
+            { success = false; Status = "创建队伍未成功，请重试。"; }
         });
         requesting = false; IsBusy = false;
         Changed?.Invoke();

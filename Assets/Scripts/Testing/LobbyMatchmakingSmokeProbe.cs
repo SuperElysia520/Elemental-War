@@ -61,6 +61,14 @@ public sealed class LobbyMatchmakingSmokeProbe : MonoBehaviour
             (ok, error) => { done = true; success = ok; if (!ok) Complete(error); });
         while (!done) yield return null;
         if (!success || finished) yield break;
+        if (SceneManager.GetActiveScene().name == GameFlowScenes.Login)
+        {
+            yield return SceneManager.LoadSceneAsync(GameFlowScenes.MainMenu);
+            while (!finished && (!account.IsAuthenticated || account.IsBusy ||
+                LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene()) == null ||
+                !LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene()).IsReady)) yield return null;
+            if (finished) yield break;
+        }
         report.stage = "avatar"; Progress();
         done = false;
         account.SaveAvatar(role == "A" ? (byte)1 : (byte)2, (ok, error) => { done = true; success = ok; if (!ok) Complete(error); });

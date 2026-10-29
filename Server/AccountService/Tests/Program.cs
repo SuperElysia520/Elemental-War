@@ -35,6 +35,27 @@ void Check(bool condition, string message)
 
 PartyRulesTests.Run(Check);
 
+var missingAccount = await Send("POST", "/api/auth/check-registration", new { username = "LoginSceneUser" });
+Check(missingAccount.status == 200 && !missingAccount.body["registered"]!.GetValue<bool>(), "Registration check identifies an unregistered username");
+Check(missingAccount.body.Count == 1, "Registration check exposes no account identity or profile");
+Check((await Send("POST", "/api/auth/check-registration", new { username = "bad name" })).status == 400, "Registration check validates the username format");
+var registrationOnly = await Send("POST", "/api/auth/register-account", new { username = "LoginSceneUser", password });
+Check(registrationOnly.status == 200 && registrationOnly.body["username"]!.GetValue<string>() == "LoginSceneUser"
+    && !registrationOnly.body.ContainsKey("accessToken") && !registrationOnly.body.ContainsKey("profile"), "Login scene registration returns no session or user data");
+var registrationDatabase = JsonNode.Parse(await File.ReadAllTextAsync(database))!;
+Check(registrationDatabase["accounts"]!.AsArray().Single(a => a!["username"]!.GetValue<string>() == "LoginSceneUser")!["sessions"]!.AsArray().Count == 0,
+    "Registration alone persists no authenticated session");
+Check((await Send("POST", "/api/auth/check-registration", new { username = "loginsceneuser" })).body["registered"]!.GetValue<bool>(),
+    "Registration lookup is case-insensitive after account creation");
+Check((await Send("POST", "/api/auth/register-account", new { username = "LOGINSCENEUSER", password })).status == 409,
+    "Login scene registration rejects duplicate usernames");
+var registrationLogin = await Send("POST", "/api/auth/login", new { username = "loginsceneuser", password });
+Check(registrationLogin.status == 200 && (await Send("GET", "/api/profile", token: registrationLogin.body["accessToken"]!.GetValue<string>())).status == 200,
+    "An explicitly registered account can subsequently log in and load user data");
+// Independent process resets credential throttling for the existing regression suite.
+host.Stop();
+await host.Start(database);
+
 var register = await Send("POST", "/api/auth/register", new { username = "CloudPlayer", password });
 Check(register.status == 200, "Register creates an account and authenticated session");
 string token = register.body["accessToken"]!.GetValue<string>();
@@ -109,12 +130,18 @@ Check(restored.status == 200 && restored.body["revision"]!.GetValue<int>() == 2
     && restored.body["appearance"]!["faceId"]!.GetValue<int>() == 4
     && restored.body["loadout"]!["primaryWeaponId"]!.GetValue<int>() == 2, "Process restart restores account, session, clothing, and loadout");
 Check((await Send("POST", "/api/auth/login", new { username = "CloudPlayer", password })).status == 200, "Password login still works after a service restart");
+Check((await Send("POST", "/api/auth/check-registration", new { username = "LoginSceneUser" })).body["registered"]!.GetValue<bool>(),
+    "Registration state survives a service restart");
 Check((await Send("GET", "/api/profile", token: token)).status == 401, "Session revocation survives a service restart");
 
 bool limited = false;
 for (int i = 0; i < 12; i++)
     if ((await Send("POST", "/api/auth/login", new { username = "CloudPlayer", password = "incorrect-password" })).status == 429) limited = true;
 Check(limited, "Repeated credential attempts are rate limited");
+bool checksLimited = false;
+for (int i = 0; i < 12; i++)
+    if ((await Send("POST", "/api/auth/check-registration", new { username = "LoginSceneUser" })).status == 429) checksLimited = true;
+Check(checksLimited, "Registration lookup is rate limited independently of password attempts");
 host.Stop();
 await host.Start(Path.Combine(runFolder, "expiry.json"), lifetimeMinutes: "0.01");
 var expiring = await Send("POST", "/api/auth/register", new { username = "ExpiryPlayer", password });
@@ -124,11 +151,17 @@ Check((await Send("GET", "/api/profile", token: expiring.body["accessToken"]!.Ge
 host.Stop();
 await host.Start(database, production: true);
 Check((await Send("POST", "/api/auth/login", new { username = "CloudPlayer", password })).status == 400, "Production rejects plaintext password requests");
-using (var spoof = new HttpRequestMessage(HttpMethod.Get, "/health"))
+Check((await Send("POST", "/api/auth/check-registration", new { username = "LoginSceneUser" })).status == 400,
+    "Production registration checks require HTTPS");
+using (var spoof = new HttpRequestMessage(HttpMethod.Post, "/api/auth/check-registration"))
 {
     spoof.Headers.Add("X-Forwarded-Proto", "https");
+    spoof.Content = JsonContent.Create(new { username = "LoginSceneUser" });
     Check((int)(await host.Client.SendAsync(spoof)).StatusCode == 400, "Unconfigured forwarded headers cannot bypass HTTPS");
 }
+var localHealth = await Send("GET", "/health");
+Check(localHealth.status == 200 && localHealth.body["service"]!.GetValue<string>() == "fps-account"
+    && localHealth.body["apiVersion"]!.GetValue<int>() == 2, "Production loopback health identifies the current service without exposing account routes over HTTP");
 Check((await Send("POST", "/api/auth/validate", token: restartedToken)).status == 200, "Production allows dedicated server validation over loopback only");
 host.Stop();
 await File.WriteAllTextAsync(Path.Combine(runFolder, "results.txt"), string.Join(Environment.NewLine, checks.Select(c => "PASS: " + c)));

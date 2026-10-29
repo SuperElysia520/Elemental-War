@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
-/// <summary>Account, wardrobe and loadout screen. Only an acknowledged cloud save becomes the equipped profile.</summary>
+/// <summary>Wardrobe and loadout for the logged-in account. Authentication belongs to the Login scene.</summary>
 public sealed class CharacterCustomizationUI : MonoBehaviour
 {
     private static CharacterCustomizationUI current;
@@ -16,8 +16,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private Text status, accountLabel;
     private Text returnButtonLabel;
     private string returnLabel = "返回大厅";
-    private InputField username, password;
-    private Button saveButton, loginButton, registerButton, logoutButton, reloadButton;
+    private Button saveButton, reloadButton;
     private bool cloudActionsWereLocked;
     private GameObject previewRoot;
     private RifleGirlAppearance preview;
@@ -97,13 +96,8 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         Place(right.rectTransform, 1122, 118, 434, 682);
         Label(right.transform, "账号与云端档案", 24, 20, 384, 44, 25, Color.white);
         accountLabel = Label(right.transform, "", 24, 74, 380, 64, 20, new Color(0.62f, 0.8f, 0.94f));
-        username = Input(right.transform, "用户名", 24, 155, false);
-        password = Input(right.transform, "密码", 24, 221, true);
-        loginButton = Button(right.transform, "登录", 24, 291, 181, 46, () => Authenticate(false));
-        registerButton = Button(right.transform, "注册", 221, 291, 181, 46, () => Authenticate(true));
-        logoutButton = Button(right.transform, "退出账号", 24, 355, 378, 42, Logout);
-        reloadButton = Button(right.transform, "重新载入云端档案", 24, 407, 378, 42, ReloadProfile);
-        Label(right.transform, "用户名：3–24 位字母、数字或下划线\n密码：10–128 位\n保存后，开局和重生使用此配装。", 24, 461, 378, 90, 17, new Color(0.62f, 0.7f, 0.81f));
+        reloadButton = Button(right.transform, "重新载入云端档案", 24, 155, 378, 42, ReloadProfile);
+        Label(right.transform, "注册、登录及切换账号请在 Login 界面进行。\n保存后，开局和重生使用此配装。", 24, 221, 378, 90, 17, new Color(0.62f, 0.7f, 0.81f));
         saveButton = Button(right.transform, "保存到账号", 24, 565, 378, 62, Save);
         status = Label(transform, "", 44, 823, 1278, 52, 20, new Color(0.64f, 0.82f, 0.98f));
         CreatePreview();
@@ -172,20 +166,6 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         light.intensity = 1.4f;
     }
     private static void SetLayer(Transform root, int layer) { root.gameObject.layer = layer; foreach (Transform child in root) SetLayer(child, layer); }
-    private void Authenticate(bool register)
-    {
-        if (!AllowCloudAction()) return;
-        if (account.IsBusy) return;
-        Action<bool, string> done = (ok, message) => { if (this == null) return; password.text = ""; status.text = ok ? "已登录，已载入云端档案。" : message; };
-        if (register) account.Register(username.text.Trim(), password.text, done);
-        else account.Login(username.text.Trim(), password.text, done);
-    }
-    private void Logout()
-    {
-        if (!AllowCloudAction() || account.IsBusy) return;
-        if (!dirty) account.Logout();
-        else status.text = "请先保存更改，或点击返回放弃本次编辑。";
-    }
     private void ReceiveProfile(PlayerProfileData profile)
     {
         if (profile == null) return;
@@ -208,7 +188,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private void Save()
     {
         if (!AllowCloudAction()) return;
-        if (!account.IsAuthenticated) { status.text = "请先注册或登录账号。"; return; }
+        if (!account.IsAuthenticated) { status.text = "请返回 Login 界面登录账号。"; return; }
         account.SaveProfile(appearance, loadout, (ok, message) => { if (this != null) status.text = ok ? "外观与配装已保存到云端。" : message; });
     }
     private void ReloadProfile()
@@ -226,7 +206,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private void RefreshStatus()
     {
         if (accountLabel == null) return;
-        accountLabel.text = account.IsAuthenticated ? "已登录：" + account.Profile.username : "登录后保存角色，换电脑也能恢复。";
+        accountLabel.text = account.IsAuthenticated ? "已登录：" + account.Profile.username + "\nUID: " + account.Profile.accountId : "请返回 Login 界面登录账号。";
         bool cloudAllowed = CanModifyCloudProfile(out string lockMessage);
         if (!cloudAllowed) status.text = lockMessage;
         else if (!string.IsNullOrEmpty(account.LastError)) status.text = account.LastError;
@@ -235,8 +215,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         cloudActionsWereLocked = !cloudAllowed;
         bool canRequest = cloudAllowed && !account.IsBusy;
         saveButton.interactable = account.IsAuthenticated && canRequest;
-        loginButton.interactable = registerButton.interactable = canRequest;
-        logoutButton.interactable = reloadButton.interactable = account.IsAuthenticated && canRequest;
+        reloadButton.interactable = account.IsAuthenticated && canRequest;
         saveButton.GetComponentInChildren<Text>().text = !cloudAllowed ? "开局期间暂不可保存" : account.IsBusy ? "正在同步…" : (dirty ? "保存更改到账号" : "保存到账号");
         foreach (var choice in choices) choice.interactable = !account.IsBusy;
         foreach (var binding in bindings) binding.label.text = binding.value();
@@ -319,17 +298,6 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
         button.onClick.AddListener(() => click());
         var label = Label(panel.transform, text, 0, 0, w, h, 20, Color.white); label.alignment = TextAnchor.MiddleCenter;
         return button;
-    }
-    private InputField Input(Transform parent, string hint, float x, float y, bool secret)
-    {
-        var panel = Panel(parent, hint, Vector2.zero, Vector2.zero, new Color(0.035f, 0.055f, 0.09f));
-        Place(panel.rectTransform, x, y, 378, 48);
-        var field = panel.gameObject.AddComponent<InputField>();
-        field.textComponent = Label(panel.transform, "", 12, 0, 354, 48, 20, Color.white);
-        field.placeholder = Label(panel.transform, hint, 12, 0, 354, 48, 20, new Color(0.5f, 0.58f, 0.68f));
-        field.contentType = secret ? InputField.ContentType.Password : InputField.ContentType.Standard;
-        field.characterLimit = secret ? 128 : 24;
-        return field;
     }
     private static void Place(RectTransform rect, float x, float y, float w, float h)
     {

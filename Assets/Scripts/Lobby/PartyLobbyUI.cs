@@ -60,7 +60,19 @@ public sealed class PartyLobbyUI : MonoBehaviour
             ? "组队界面尚未绑定面板、开始、离开或返回按钮，请完成 PartyLobbyUI 接线。" : "";
         return error == "";
     }
-    public void CreateAndShow() { if (!ValidateParty(out _)) return; client.Create(); SetVisible(true, false); }
+    public void CreateAndShow()
+    {
+        if (!ValidateParty(out _) || client.IsBusy) return;
+        if (client.Party != null) { ShowParty(); return; }
+        // Opening a panel does not create a party. Keep the home visible until
+        // the service confirms one, and leave a failed request available to retry.
+        client.Create(success =>
+        {
+            if (this == null) return;
+            if (success && client.Party != null) ShowParty();
+            else if (home != null) { home.ShowHome(); home.DisplayStatus(client.Status); }
+        });
+    }
     public void ShowParty() => SetVisible(true, false);
     public void OpenRooms()
     {

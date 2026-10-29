@@ -18,6 +18,7 @@ public static class GameFlowBuildScenes
         };
         if (!server) required.Add("GamePVE");
         var result = new List<string>();
+        if (!server) required.Insert(0, GameFlowScenes.Login);
         foreach (string name in required)
         {
             var matching = enabled.Where(scene => Path.GetFileNameWithoutExtension(scene.path) == name).ToArray();

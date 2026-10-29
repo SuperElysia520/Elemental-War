@@ -11,6 +11,8 @@ public static class PvpMigrationBuildValidation
     public static void BuildServer() => Build(true);
     public static void BuildLobbyClient() => Build(false, "LobbyRedesign");
     public static void BuildLobbyServer() => Build(true, "LobbyRedesign");
+    public static void BuildUgsClient() => Build(false, "UgsPvp");
+    public static void BuildUgsServer() => Build(true, "UgsPvp");
     private static void Build(bool server, string destination = "RifleGirlMigration")
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode) throw new InvalidOperationException("Exit Play Mode before building.");
@@ -37,7 +39,7 @@ public static class PvpMigrationBuildValidation
             };
             BuildReport report = BuildPipeline.BuildPlayer(options);
             string evidence = $"Result: {report.summary.result}\nErrors: {report.summary.totalErrors}\nWarnings: {report.summary.totalWarnings}\nSize: {report.summary.totalSize}\nDuration: {report.summary.totalTime}\nOutput: {Path.GetFullPath(output)}\n";
-            string evidenceDirectory = "tmp/" + (destination == "LobbyRedesign" ? destination : "PvpMigration");
+            string evidenceDirectory = "tmp/" + (destination == "LobbyRedesign" || destination == "UgsPvp" ? destination : "PvpMigration");
             Directory.CreateDirectory(evidenceDirectory);
             File.WriteAllText(evidenceDirectory + "/build-" + folder.ToLowerInvariant() + ".txt", evidence);
             if (report.summary.result != BuildResult.Succeeded) throw new InvalidOperationException(evidence);

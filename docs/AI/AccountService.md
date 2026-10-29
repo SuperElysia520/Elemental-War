@@ -1,8 +1,14 @@
 # PVP 账号与云档案服务
 
+当前默认后端已切换为 **UGS 注册、登录和云存档**，配置见 [UgsBackendSetup.md](UgsBackendSetup.md)。本页记录的是保留的 SelfHosted .NET 后端及旧 PvP 账号协议；UGS 使用不同的身份和数据，不会自动迁移本页的账号文件或兼容旧入场票据。只有明确选择 SelfHosted 模式时，下文服务器地址和证书配置才用于客户端账号请求。
+
 实施日期：2026-09-26。账号服务实现、本机 HTTP 集成验证及真实 Unity 双客户端功能联调已完成；已按用户确认的 Windows Server 2022、公网 IP `114.66.59.53` 准备无域名 HTTPS 部署脚本。尚未连接雨云、安装服务器运行时、申请证书或执行远程部署；公网连通与跨电脑客户端验收仍需部署后进行。账号服务不依赖 PVE。
 
 ## 实现范围
+
+2026-10-20：继续使用现有雨云 Windows 服务器的简化安装、保留数据更新及新版后端打包，优先看 [雨云简化部署](RainyunBackendDeployment.md)。新版包自带 .NET 运行时；下文手工安装运行时和逐个执行证书脚本的流程保留用于排查与维护。Unity 可从 `Tools > FPS > Cloud Backend > Configure` 保存公开地址并检查后端版本。
+
+部署适用性补充：当前安装器只实现纯 IP 的 HTTP-01 证书验证，不是雨云各区域通用的公网接入方案。[雨云官方 FAQ](https://www.rainyun.com/docs/products/rcs/faq) 要求中国大陆节点使用完成备案、白名单及正确接入信息的域名。用户反馈的 Staging 验证失败尚未解决，不能把本地脚本通过当成公网 HTTPS 已上线；需先核实节点条件和实际 HTTP 响应。证书状态目录回退问题与公网验证响应错误是两个独立问题。
 
 - 用户名/密码注册登录；用户名为 3–24 位字母、数字、下划线，不区分大小写，保留注册时的显示大小写；密码为 10–128 字符。
 - 密码由 ASP.NET Core Identity `PasswordHasher` 生成带独立随机盐的版本化 PBKDF2 哈希（Identity V3、210,000 次）；不保存原始密码。
@@ -54,6 +60,8 @@ dotnet run --project Server/AccountService/Tests/AccountService.IntegrationTests
 | 方法与路径 | 请求 | 成功响应 |
 | --- | --- | --- |
 | POST `/api/auth/register` | `{username,password}` | `{accessToken,expiresAtUnixSeconds,profile}` |
+| POST `/api/auth/check-registration` | `{username}` | `{registered}`；用于 Login 场景判断是否需先注册 |
+| POST `/api/auth/register-account` | `{username,password}` | `{username}`；只注册，不登录、不返回档案 |
 | POST `/api/auth/login` | `{username,password}` | 同注册 |
 | POST `/api/auth/logout` | 无正文 | 204 |
 | POST `/api/auth/validate` | 无正文 | profile；仅供确有需要的服务端验证 |
@@ -66,6 +74,8 @@ dotnet run --project Server/AccountService/Tests/AccountService.IntegrationTests
 `profile` 字段与 Unity `PlayerProfileData` 一致：`accountId`、`username`、`revision`、`appearance`、`loadout`。`appearance` 为 `outfitId` 0–2、`faceId` 0–4、`clothColorId` 0–4、`hairColorId` 0–3、`hat`、`accessories`；服装 2 无配件，`accessories` 必须为 false。`loadout` 为 `primaryWeaponId` 0（步枪）或 2（狙击枪）、`primarySightId` 0–5、`sidearmSightId` 0 或 3。没有客户端设置 `accountId` 或用户名来访问他人档案的接口。
 
 Unity 接入：`AccountClient.EnsureInstance()`，调用 `Register/Login/Logout/RefreshProfile/SaveProfile`；`StateChanged` 用于忙碌/错误提示，`ProfileChanged` 用于刷新外观。`RequestGameTicket(Action<string,string>)` 的两个回调参数是票据和错误信息。游戏服用 `StartCoroutine(AccountClient.RedeemServerTicket(ticket, (profile,error) => ...))` 并在取得可信 profile 后批准连接。不要把 `AccessToken` 写入 NGO 数据、PlayerPrefs、日志或文件。
+
+2026-10-14：正式客户端注册登录已集中到独立 Login 场景，使用 `CheckRegistration/RegisterAccount/LoginSession`；进入 GameStart 后再调用 `RefreshProfile`。UI 接线和后端更新要求见 [LoginSceneFlow.md](LoginSceneFlow.md)。原有 Register/Login 接口保留供既有联调代码使用。
 
 ## 持久化与部署约束
 
@@ -86,7 +96,7 @@ Unity 接入：`AccountClient.EnsureInstance()`，调用 `Register/Login/Logout/
 
 ## Windows Server 2022：通过公网 IP 部署 HTTPS
 
-这是供 RDP 登录服务器后审核执行的部署包，**目前未部署**。不需要购买域名：Let's Encrypt 已支持 IPv4/IPv6 地址证书，必须使用 `shortlived` 配置，有效期为 160 小时。因此这里同时准备自动续期，不能只签发一次后放置不管。[Let's Encrypt 官方公告](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)
+这是供 RDP 登录服务器后执行的纯 IP 部署备选流程，**尚未确认服务器完成公网 HTTPS 上线**。仅当节点允许直接通过 IP 提供公网 HTTP/HTTPS，且证书机构能在端口 80 读到验证内容时，才适用此方案。Let's Encrypt 支持 IPv4/IPv6 地址证书，必须使用 `shortlived` 配置，有效期为 160 小时；因此还需自动续期，不能只签发一次后放置不管。[Let's Encrypt 官方公告](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability)
 
 服务直接通过 Kestrel 提供 `https://114.66.59.53:443`，另保留 `http://127.0.0.1:5080` 给同机游戏服。TCP 80 仅在签发/续期时临时提供 HTTP-01 验证，不承载账号密码接口。证书使用完整 PEM 链和 PEM 私钥，Kestrel 按 `Certificate:Path` / `Certificate:KeyPath` 读取。[Kestrel 官方配置](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0)
 

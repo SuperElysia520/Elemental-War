@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>Authored scene destinations shared by menu, lobby and dedicated-server flows.</summary>
 public static class GameFlowScenes
 {
+    public const string Login = "Login";
     public const string MainMenu = "GameStart";
     public const string MultiplayerLobby = "GameLobby";
     public const string PvpMatch = "GamePVP";

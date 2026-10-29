@@ -21,6 +21,9 @@ public sealed record Profile(string AccountId, string Username, int Revision, Ap
 }
 public sealed record SaveAvatarRequest(byte AvatarId);
 public sealed record Credentials(string? Username, string? Password);
+public sealed record RegistrationCheckRequest(string? Username);
+public sealed record RegistrationCheckResponse(bool Registered);
+public sealed record RegistrationResponse(string Username);
 public sealed record SaveProfileRequest(int Revision, Appearance? Appearance, Loadout? Loadout);
 public sealed record AuthResponse(string AccessToken, long ExpiresAtUnixSeconds, Profile Profile);
 public sealed record GameTicketResponse(string Ticket, long ExpiresAtUnixSeconds);

@@ -5,6 +5,30 @@ using Fps.AccountService;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
+// Only the path crosses the process boundary; service-account credentials stay
+// in an external ACL-restricted file installed on the Rainyun server.
+string? ugsConfigPath = Environment.GetEnvironmentVariable("FPS_UGS_PVP_CONFIG");
+var ugsOptions = new UgsBridgeOptions();
+if (!string.IsNullOrWhiteSpace(ugsConfigPath))
+{
+    if (!Path.IsPathFullyQualified(ugsConfigPath)) throw new InvalidOperationException("FPS_UGS_PVP_CONFIG must be an absolute external config path.");
+    string configFile = Path.GetFullPath(ugsConfigPath);
+    string appDirectory = Path.GetFullPath(builder.Environment.ContentRootPath).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    if (configFile.StartsWith(appDirectory, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        throw new InvalidOperationException("UGS bridge credential config must be outside the application directory.");
+    // Read credentials only from this file, never from command-line settings or
+    // UgsPvpBridge__* environment overrides inherited by the server process.
+    var external = new ConfigurationBuilder().AddJsonFile(configFile, optional: false, reloadOnChange: false).Build();
+    ugsOptions = external.GetSection("UgsPvpBridge").Get<UgsBridgeOptions>() ?? new();
+    builder.Configuration.AddConfiguration(external);
+}
+ugsOptions.Validate();
+if (ugsOptions.Enabled)
+{
+    if (string.IsNullOrWhiteSpace(ugsConfigPath)) throw new InvalidOperationException("UGS bridge credentials require FPS_UGS_PVP_CONFIG external configuration.");
+    builder.WebHost.UseUrls("http://127.0.0.1:5080");
+}
+builder.Services.AddSingleton(ugsOptions);
 // Console capture works under a low-privilege service account without Windows Event Log permissions.
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole(options => options.SingleLine = true);
@@ -15,7 +39,24 @@ builder.Services.AddSingleton<AccountStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PartyStore>();
 builder.Services.AddHostedService<PartyMatchmaker>();
-var trustedProxies = builder.Configuration.GetSection("TrustedProxyAddresses").Get<string[]>() ?? [];
+if (ugsOptions.Enabled)
+{
+    builder.Services.AddSingleton(new HttpClient(new HttpClientHandler
+    {
+        AllowAutoRedirect = false,
+        // The observed Rainyun-to-Cloud-Save path resets with default TLS;
+        // its tested TLS 1.2 path retains normal certificate and hostname checks.
+        SslProtocols = System.Security.Authentication.SslProtocols.Tls12
+    }) { Timeout = TimeSpan.FromSeconds(10) });
+    builder.Services.AddSingleton<IUgsCloudStore, UgsCloudStore>();
+    builder.Services.AddSingleton<UgsProfiles>();
+    builder.Services.AddSingleton<UgsTicketStore>();
+    builder.Services.AddSingleton<UgsPvpWorker>();
+    builder.Services.AddHostedService(services => services.GetRequiredService<UgsPvpWorker>());
+}
+// UGS local server calls must use the socket's actual peer address; forwarded
+// headers have no purpose in this loopback-only process.
+var trustedProxies = ugsOptions.Enabled ? [] : builder.Configuration.GetSection("TrustedProxyAddresses").Get<string[]>() ?? [];
 if (trustedProxies.Length > 0)
 {
     builder.Services.Configure<ForwardedHeadersOptions>(options =>
@@ -42,6 +83,9 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("credentials", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("registration-check", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 var app = builder.Build();
@@ -53,6 +97,13 @@ app.Use(async (context, next) =>
     context.Response.Headers.CacheControl = "no-store";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     bool loopback = context.Connection.RemoteIpAddress != null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
+    bool ugsServerEndpoint = context.Request.Path.StartsWithSegments("/api/ugs");
+    if ((ugsServerEndpoint || ugsOptions.Enabled) && !loopback)
+    {
+        context.Response.StatusCode = 403;
+        await context.Response.WriteAsJsonAsync(new ApiError("local_server_only", "此接口仅供同机游戏服务器使用。"));
+        return;
+    }
     bool serverEndpoint = context.Request.Path.StartsWithSegments("/api/matches/server");
     if (serverEndpoint && !loopback)
     {
@@ -60,8 +111,9 @@ app.Use(async (context, next) =>
         await context.Response.WriteAsJsonAsync(new ApiError("local_server_only", "此接口仅供同机游戏服务器使用。"));
         return;
     }
-    bool localServerEndpoint = loopback && (context.Request.Path == "/api/game-ticket/redeem" || context.Request.Path == "/api/auth/validate" || serverEndpoint);
-    if (!context.Request.IsHttps && !(app.Environment.IsDevelopment() && loopback) && !localServerEndpoint)
+    bool localServerEndpoint = loopback && (context.Request.Path == "/api/game-ticket/redeem" || context.Request.Path == "/api/auth/validate" || serverEndpoint || ugsServerEndpoint);
+    bool localHealth = loopback && HttpMethods.IsGet(context.Request.Method) && context.Request.Path == "/health";
+    if (!context.Request.IsHttps && !(app.Environment.IsDevelopment() && loopback) && !localServerEndpoint && !localHealth)
     {
         context.Response.StatusCode = 400;
         await context.Response.WriteAsJsonAsync(new ApiError("https_required", "账号服务要求 HTTPS 连接。"));
@@ -87,8 +139,11 @@ app.Use(async (context, next) =>
     }
 });
 app.UseRateLimiter();
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapAccountHealthEndpoint();
+if (ugsOptions.Enabled) app.MapUgsPvpEndpoints();
 app.MapPost("/api/auth/register", (Credentials body, AccountStore store) => store.Register(body)).RequireRateLimiting("credentials");
+app.MapPost("/api/auth/register-account", (Credentials body, AccountStore store) => store.RegisterAccount(body)).RequireRateLimiting("credentials");
+app.MapPost("/api/auth/check-registration", (RegistrationCheckRequest body, AccountStore store) => store.CheckRegistration(body)).RequireRateLimiting("registration-check");
 app.MapPost("/api/auth/login", (Credentials body, AccountStore store) => store.Login(body)).RequireRateLimiting("credentials");
 app.MapPost("/api/auth/logout", (HttpContext context, AccountStore store) =>
 {

@@ -275,16 +275,30 @@ public sealed class PartyStore
         }
     }
 
-    public void RefreshProfiles(Func<string, Profile> readProfile)
+    public void RefreshProfiles(Func<string, Profile> readProfile, bool skipUnavailable = false)
     {
         lock (gate)
             foreach (Party party in parties.Values.Where(p => p.MatchId == null))
                 foreach (Member member in party.Members)
                 {
-                    Profile saved = readProfile(member.Profile.AccountId);
+                    Profile saved;
+                    try { saved = readProfile(member.Profile.AccountId); }
+                    catch (ApiException) when (skipUnavailable)
+                    { ResetReady(party); party.QueuedAt = null; continue; }
                     if (saved.Revision == member.Profile.Revision) continue;
                     member.Profile = saved; ResetReady(party); party.QueuedAt = null;
                 }
+    }
+
+    public string[] ActivePlayerIds()
+    {
+        lock (gate) return parties.Values.SelectMany(p => p.Members.Select(m => m.Profile.AccountId))
+            .Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    public string[] PartyPlayerIds(string playerId)
+    {
+        lock (gate) return Find(playerId)?.Members.Select(m => m.Profile.AccountId).ToArray() ?? [];
     }
 
     private static bool Pack(Party[] queue, int index, int redLeft, int blueLeft,

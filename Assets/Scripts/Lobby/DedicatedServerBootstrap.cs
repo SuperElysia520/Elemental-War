@@ -9,6 +9,7 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public static class DedicatedServerBootstrap
 {
+    public static bool IsDedicatedServerProcess => ShouldRunDedicatedServer();
     private const string ServerFlag = "-dedicatedPvpServer";
     private const string PortArgument = "-port";
     private static bool s_Started;

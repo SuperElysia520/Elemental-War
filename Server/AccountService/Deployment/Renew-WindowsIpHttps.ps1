@@ -6,6 +6,9 @@ $ErrorActionPreference = 'Stop'
 $config = Read-FpsHttpsConfiguration $StateDirectory
 $lock = [IO.File]::Open((Join-Path $config.stateDirectory 'renew.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
 try {
+    if (-not (Test-Path -LiteralPath $config.acmeDirectory -PathType Container)) {
+        throw 'The configured ACME account directory is missing. Renewal stopped without importing a default account; restore the original ACME state before retrying.'
+    }
     $env:POSHACME_HOME = $config.acmeDirectory
     Import-Module Posh-ACME -MinimumVersion 4.34.0 -Force
     Set-PAServer LE_PROD

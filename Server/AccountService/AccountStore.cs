@@ -53,18 +53,43 @@ public sealed partial class AccountStore : IDisposable
 
     public AuthResponse Register(Credentials credentials)
     {
-        var (username, password) = ValidateCredentials(credentials, registering: true);
-        var key = username.ToUpperInvariant();
-        // Expensive password hashing happens outside the shared storage lock.
-        var hash = passwords.HashPassword(username, password);
+        Account account = CreateRegistrationAccount(credentials, out string key);
         lock (gate)
         {
             if (accounts.ContainsKey(key)) throw new ApiException(409, "username_taken", "用户名已被使用。");
-            var id = Guid.NewGuid().ToString("N");
-            var account = new Account(id, username, hash,
-                new Profile(id, username, 0, new Appearance(), new Loadout()), []);
             return IssueSession(key, account);
         }
+    }
+
+    // Login scene registration creates an account without logging in or returning its profile.
+    public RegistrationResponse RegisterAccount(Credentials credentials)
+    {
+        Account account = CreateRegistrationAccount(credentials, out string key);
+        lock (gate)
+        {
+            if (accounts.ContainsKey(key)) throw new ApiException(409, "username_taken", "用户名已被使用。");
+            Persist(key, account);
+            return new RegistrationResponse(account.Username);
+        }
+    }
+
+    public RegistrationCheckResponse CheckRegistration(RegistrationCheckRequest request)
+    {
+        string username = request.Username?.Trim() ?? "";
+        if (!UsernamePattern().IsMatch(username))
+            throw new ApiException(400, "invalid_username", "用户名需为 3–24 位字母、数字或下划线。");
+        lock (gate) return new RegistrationCheckResponse(accounts.ContainsKey(username.ToUpperInvariant()));
+    }
+
+    private Account CreateRegistrationAccount(Credentials credentials, out string key)
+    {
+        var (username, password) = ValidateCredentials(credentials, registering: true);
+        key = username.ToUpperInvariant();
+        // Expensive password hashing happens outside the shared storage lock.
+        var hash = passwords.HashPassword(username, password);
+        var id = Guid.NewGuid().ToString("N");
+        return new Account(id, username, hash,
+            new Profile(id, username, 0, new Appearance(), new Loadout()), []);
     }
 
     public AuthResponse Login(Credentials credentials)

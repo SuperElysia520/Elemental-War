@@ -18,6 +18,7 @@ public class MainMenuUI : UIBase<MainMenuUI>
     public Button btnVoice;
     public Button btnExit;
     private bool loadingLobby;
+    private GameStartProfileLoader profileLoader;
 
     protected override void Awake()
     {
@@ -49,7 +50,27 @@ public class MainMenuUI : UIBase<MainMenuUI>
     protected override void Start()
     {
         base.Start();
+        profileLoader = LoginSceneBootstrap.FindLoader(gameObject.scene);
+        if (DedicatedServerBootstrap.IsDedicatedServerProcess || profileLoader == null || profileLoader.IsReady)
+            Enter();
+        else
+        {
+            // Loader lives on a separate root, so hiding this menu cannot stop the profile request.
+            gameObject.SetActive(false);
+            profileLoader.Ready += ShowLoadedMenu;
+        }
+    }
+
+    private void ShowLoadedMenu()
+    {
+        profileLoader.Ready -= ShowLoadedMenu;
         Enter();
+    }
+
+    protected override void OnDestroy()
+    {
+        if (profileLoader != null) profileLoader.Ready -= ShowLoadedMenu;
+        base.OnDestroy();
     }
     
     private void ShowTipMenu()

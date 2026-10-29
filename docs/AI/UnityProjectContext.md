@@ -29,13 +29,67 @@
 
 ## 启动与联机流程
 
-- Build Settings 中启用 `GameStart`、`GameLobby`、`GamePVP`、`GamePVE`，入口为 `GameStart`。
+- 2026-10-14 起客户端入口为 `Login`，登录成功进入 `GameStart` 后请求云端档案；主菜单等待读取成功后显示。注册登录已从角色定制界面移出，手工 UI 接线见 [LoginSceneFlow.md](LoginSceneFlow.md)。令牌仍仅在进程内存中保存。
+- 客户端 Build Settings 启用 `Login`、`GameStart`、`GameLobby`、`GamePVP`、`GamePVE`；专用服务器构建保留 `GameStart` 入口并跳过登录。用户将 GamePVE/Lobby/NetTest 移到 `Assets/Scenes/Test`，GamePVE 构建引用沿用 GUID 更新路径。
 - PvE 由玩家 `StartHost()`，通过局域网 UDP 广播发现房间。
 - PvP 由云端每个房间槽位启动一个 `StartServer()` 进程；客户端向固定地址的状态查询端口发送 UDP 请求，再连接对应游戏端口。服务器通过 NGO 场景管理加载 `GamePVP`。
 - 当前场景与构建工具默认使用 10 个 PvP 槽位：游戏 UDP 7777-7786，查询 UDP 48777-48786。公网地址保存在 `Assets/Scenes/GameStart.unity` 的 `LobbyManager.dedicatedServerAddress` 字段；迁移云厂商需更新此值和客户端构建。不要在上下文文档中复制公网地址。
 - `LobbyManager` 使用 `Application.version` 和账号发现协议版本 4 拦截旧客户端/服务器；PVP 通过一次性账号票据取得服务端批准的角色、配装和匹配名单快照。
 
-## 2026-10-05 五人队伍匹配
+## 2026-10-20 UGS 账号与存档
+
+- 用户已选择 UGS，并已有 Unity Cloud 项目。`AccountServiceSettings` 当前默认 `UnityGamingServices`，环境 `development`，Cloud Code JavaScript 脚本 `FpsProfile`；控制台实际开通和发布需由项目拥有者完成，不能视为已经上线。
+- UGS Authentication 3.6.1、Cloud Save 3.4.0、Cloud Code 2.10.3、Services Core 1.16.0 经 UPM Client API 安装。Login 的旧版 InputField/Text 和手工布局沿用。
+- `AccountClient` 保留外部接口，通过 `AccountClient.Ugs.cs` / `UgsAccountGateway` 接入原生用户名密码认证；注册完成立即退出，LoginSession 不读取角色，GameStart 才读取 Protected `fps_profile_v1`。UGS 没有公开的未登录用户名存在性查询，登录失败不自动引导为“确定未注册”。
+- `Server/UgsCloudCode/FpsProfile.js` 校验身份、外观、配装和头像，已有存档更新使用 revision + writeLock。默认读取不落盘，首次修改才创建档案；Cloud Save 没有已核实的原子首次创建接口，两个设备同时首次保存可能最后写入生效，详见同目录 README。
+- 用户名/密码规则按 UGS，旧自建账号不自动迁移。UGS PvP 后续已接入 Cloud Code `FpsPvp` + Cloud Save Private Custom 邮箱 + 雨云出站 worker；SelfHosted 模式保留。不得把 UGS JWT 当旧后端令牌或通过游戏 UDP 发送。
+- 配置入口 `Tools > FPS > UGS Backend > Configure`，逐步操作见 [UgsBackendSetup.md](UgsBackendSetup.md)。本机测试可通过 `FPS_ACCOUNT_BACKEND` 强制选择后端；生产资源不填管理密钥。
+- 验证：实际 Unity 编译通过；真实 Login → GameStart 场景配合可控 fake UGS 边界的 54 项检查通过，0 运行错误；Cloud Code 实际 JS 脚本替换云端 SDK 网络边界的 84 项检查通过；SelfHosted 真实本机 HTTP 的 44 项旧登录流程回归通过。UGS 控制台开通/发布、国内真实网络与真实账号联调尚未完成，不能称已云端上线。报告位于 `tmp/UgsIntegration/runtime-validation.json` 和 `tmp/LoginFlow/runtime-validation.json`。
+- 后续注册提示修正：已确认 `abc` 本地合法且手工输入框绑定正确。旧 InvalidParameters 10002 拼接两段规则，在用户的 800×60 提示框中需 129 像素高度而被截断；改为简短通用拒绝提示，已知提供方未启用则提示开通，不凭通用错误断言用户名不合法；用户名/密码本地提示分开。61 项场景回归通过，新增真实旧版输入框和注册按钮提交 `abc`、提交后清密码不改请求副本、通用参数拒绝及提供方未启用的合成错误分流。新服务错误提示高度 43 像素，未调整用户场景布局。
+- 实际注册 10002 的后续诊断：从既有在线失败响应安全提取到 HTTP 400、`INVALID_PARAMETERS`，详情为 `Invalid environment name provided`。这次拒绝指向环境名称，不是已证实的用户名、密码格式或提供方错误。客户端配置仍是 `development`；需由用户核对同一云项目的环境列表，缺少则创建 `development`，或主动选择现有环境并将其准确 **Name**（不是 Environment ID）填入本地设置，同时在同一环境发布 `FpsProfile`、检查 Cloud Save。没有自动改用 `production`，没有据此宣称云端已修复或真实注册通过；诊断不记录密码、令牌和完整请求体。
+- 环境错误现单独提示“UGS 环境名无效，请检查环境配置。”，通用 10002 提示“UGS 请求参数或服务配置无效（10002）。”；Unity 编译 0 错误，输入审计的 7 项错误映射检查通过。环境提示高度 43 像素，适配用户现有提示区域，未改场景布局；这些验证不代表真实云端注册成功。
+
+2026-10-20 后续联调：用户创建 `development` 后注册成功；登录后的云存档请求实际返回 Cloud Code HTTP 404、`Script could not be found`（9002），当前配置为 `development` / `FpsProfile`。已增加按 CloudCodeException 类型、NotFound 原因和 9002 错误码识别的明确提示；Unity 重新编译成功，9 项错误映射检查通过（包括脚本缺失不判为会话失效），新提示高度 43 像素且适配现有提示区域。云端需在同一环境创建并发布该 JS 脚本，不能把脚本缺失当成账号失败，不能自动切换存档环境。实际云端发布仍需用户完成。
+
+## 2026-10-20 UGS PvP 与雨云桥接
+
+- 客户端的既有 PartyLobbyClient/队伍 UI 接口保留；AccountClient 把队伍、普通票据、匹配票据和开局前配装同步路由到 `FpsPvp`。脚本用 context.playerId 认证请求，在 Private Custom `fps_pvp_bridge_v1` 的本人邮箱提交；客户端只向 UGS HTTPS 发请求。
+- 雨云 .NET `UgsPvpWorker` 用受限外部配置中的服务账号主动访问 UGS，复用 PartyStore/PartyMatchmaker。权威角色来自 Protected fps_profile_v1；UGS 玩家不写入旧 accounts.json。真实 writeLock、本人 requestId、30秒TTL、15秒lease和进程epoch防止旧回包混入新请求；每环境只运行一个worker，首次同玩家邮箱创建并非原子，详见协议。
+- NGO 专服只用本机 /api/ugs/game-ticket/redeem、/api/ugs/matches/server；64位随机短票据60秒单次消费，兑换时重读角色并校验匹配名单、版本和端口。UGS JWT不经过游戏UDP。协议升级为5，需要同步更新客户端、专服和桥接程序。
+- 客户端/专服构建入口新增 build-ugs-pvp-client/server，输出 Builds/UgsPvp/Client/FPS.exe 和 Server/FPS_PVP_Server.exe。配置窗口可复制FpsPvp脚本及5参数表。部署见 [UgsPvpRainyunSetup.md](UgsPvpRainyunSetup.md)，不依赖公网HTTP、备案域名或IP证书。
+- 本地证据：真实Login/GameStart配合假UGS边界76项检查通过；实际CloudCode JS配合假CloudSave SDK的268项检查通过（PvP184、Profile84）。后端真实规则14场景116断言、REST与本机HTTP51断言、旧SelfHosted74断言通过；Windows客户端/专服构建均0错误（分别3/5条警告），独立bridge发布程序本机启动与health通过。已生成Rainyun-UgsPvp.zip和WindowsClient.zip。真实UGS发布、雨云服务账号配置和公网两端联调尚未执行，不能据本地验证声称已上线。
+## 2026-10-23 建队面板提前打开与错误隐藏
+
+- 用户报告 GameLobby 点击开始游戏后短暂显示组队面板，随后无提示回首页。确认旧 UI 在异步 create 成功前直接打开空面板；失败后 Party 仍为空，Refresh 自动关面板，而首页没有呈现 PartyLobbyClient.Status。现有日志没有该次建队失败分类，不能据此断言 FpsPvp 未发布、桥接离线或 UDP 不通。
+- 修复为创建中保留首页、显示进度并阻止重复提交/离开，服务确认非空队伍后才打开组队面板。失败原因通过首页既有 Tmp Status 保留到下一次操作；200 但没有队伍也明确判为创建未成功。保留原 Create() Inspector 接口和用户布局，没有编辑场景。
+- 用户 PvP 操作失败现在记录固定 operation/status/category；不记录账号、ID、密码、令牌或回包，current/rooms 后台轮询不刷警告。用于下一次真实请求区分脚本缺失、桥接状态、超时和业务拒绝，不能代替真实云端联调。
+- 真实 Login → GameStart → GameLobby 配合假 UGS 传输的复现：修复前原 77 项通过，延迟建队断言失败（home=False、panel=True、busy=True）；修复后共 86 项通过，0 错误，场景及测试工厂恢复成功。另有 24 项登录错误映射、9 项真实 SDK PvP 诊断审计通过。证据 `tmp/PartyFlow/runtime-before.json`、`runtime-after.json`、`diagnostic-audit.json`。实际 UGS 注册账号与雨云匹配仍需用户复试，不把假传输验证称为公网双端成功。
+- Windows 客户端重新构建成功（0 错误、6 警告），已更新 `Builds/UgsPvp/Client` 与 `WindowsClient.zip`（SHA256 `75C929D1ABB9512C55F066B2926ECCA0A9464F8924DFBE85A160F900AD170A0A`）；未重建或更改雨云服务端。Login/GameStart/GameLobby 场景文件哈希保持一致，编辑器恢复为停止状态的 Login 场景。
+- 后续真实复试显示 BridgeUnavailable。用户确认雨云任务 Running、health 为 status=ok/service=fps-account/apiVersion=2、配置 Enabled=true、development 名称和 Environment ID 与控制台完全一致、邮箱 fps_pvp_bridge_v1。尚无云端租约样本，不能据此确定网络、时钟或具体 worker 故障。health 当前是固定 HTTP 存活响应，不验证运行中的租约新鲜度。
+- 新增单文件 `Server/AccountService/Deployment/Test-UgsPvpBridge.ps1`，交付副本在 `Builds/UgsPvp`：从服务器现有配置向固定官方 HTTPS 换令牌，三次只读采样 bridge 心跳，对比 UGS Date 与本机 UTC；只输出状态、有效期、续期和时差，不输出凭据、令牌、租约身份或响应原文，不写云数据、不改任务或配置。Windows PowerShell 5.1 隔离 16 类场景、108 项断言通过；生产与测试脚本解析通过、配置字节保持、TLS 设置恢复。诊断脚本本机测试替换 HTTP 边界，真实雨云采样仍需用户运行后提供 JSON。
+
+## 2026-10-29 诊断脚本 Token HTTP 201 误报
+
+- 用户在雨云运行 v1 诊断得到 TokenExchangeFailed / TokenHttp=201 / Samples=[]。这是诊断脚本把成功状态限定为 200 后提前退出，尚未形成租约采样证据；不能据此认定服务账号无效或桥接故障已解决。Unity Token Exchange v2 官方契约成功返回 201 Created。
+- 脚本改为接受 200–299，并继续校验 JSON、accessToken 非空字符串与无换行；报告升级 DiagnosticVersion=2。正式 UgsCloudStore 原先已使用 IsSuccessStatusCode，这次不修改或重建服务程序。
+- Windows PowerShell 5.1 隔离回归 147/147 通过，新增 201 有效令牌后采样、201 坏 JSON/缺令牌、204 空正文和 302 拒绝等；脱敏、TLS 恢复及配置不变验证保留。源码与 Builds/UgsPvp/Test-UgsPvpBridge.ps1、明确命名的 Test-UgsPvpBridge-v2.ps1 交付副本及 SHA256 清单同步。仍需用户在雨云运行 v2 后提供实际心跳报告。
+
+## 2026-10-29 桥接心跳过期后的实际恢复
+
+- v2 实际采样：TokenHttp=201、Private GET=200、lease 结构正确但过期约 6.7 天且不续期，服务器与云 UTC 差约 0.2–0.6 秒。5080 进程确认为 C:\FpsUgsPvp\App\AccountService.exe，自 2026-10-20 运行。定向停止固定任务、确认旧进程退出、等待旧租约窗口并重启后，三次云端采样恢复 LeaseHealthy / LeaseAdvancing=true / EpochStable=true，用户确认游戏可正常建队并停留。历史进程具体阻塞位置未知。
+- 修正已复现的 HTTP 正文缺少超时和 health 固定存活响应：整个 UGS 操作使用至多 10 秒 linked deadline，包括令牌锁、正文读取和 401 重试；只有 cloud 写入成功后发布此次真实租约 expiry，健康过期返回 503/degraded，但保留所有权门禁允许后续续租恢复。SelfHosted 健康响应仍为原三个字段，协议与 Unity 客户端/专服无需为本次变化重建。
+- 验证：worker 17 场景/133 断言、HTTP/REST 与真实回环 HTTP 70 断言通过；实际原 10.0.8 自包含 App 隔离副本仅换 DLL/PDB 后启动通过（tmp/UgsBridgeRecoverySmoke/result.json）。新增定向小补丁更新器，Windows PowerShell 5.1 隔离 29/29 场景通过，覆盖精确进程/任务归属、残留进程拒绝、备份与 ACL、严格的新健康字段；不读取 State 密钥或操作 Unity 服。
+- 交付 Builds/UgsPvp/UgsBridgeRecoveryPatch.zip，SHA256=12B0C3706976C50095594D5A8D37FDEB6C2CA20601D1C2FD96FABB0631F837CA，含 DLL/PDB、严格清单、更新器、v2 只读诊断与说明。原程序的定向重启已实际恢复建队；这份防护补丁尚需用户自行安装和复测，不能称已部署。公网双账号匹配及入场尚未据本轮新证据验收。
+
+## 2026-10-29 UGS 桥接启动网络失败恢复
+
+- 用户确认上个恢复 DLL 已安装，但任务 Ready、无监听进程，health HTTP=0。15:09:32 的当前 .NET Runtime 事件确认首次 Cloud Save GET 在 TLS 握手时被重置（HttpRequestException/Socket10054），异常穿过 InitializeAsync/StartAsync 导致退出；不要再把当前现场当成存活进程中轮询阻塞。
+- 首次租约初始化移入 ExecuteAsync 独立循环，网络/超时/408/429/5xx 每 5 秒重试，HTTP 程序保持可观察的 503；成功后才正常轮询。不可恢复权限/租约冲突保持失败，后续丢失 ownership 不会重新初始化。Stop 先使健康失效并取消，迟到首次写响应不能复活健康。
+- 本地旧码复现后，新码 worker 24 场景/176 断言、HTTP 74 断言、更新脚本 29 隔离场景通过；原自包含 10.0.8 副本验证启动。新交付目录/包 Builds/UgsPvp/UgsBridgeStartupRecoveryPatch，避免覆盖旧包造成哈希混淆。尚需用户实际安装新包与诊断 LeaseHealthy，不能称已修复实际雨云出站链路。
+- 新包 ZIP SHA256=15B9325C844F3E776F3ACB5684E4BE295A70224DA629B169A5749D593FBB1A43（99724 字节）；新 DLL SHA256=495C9461ABE1D2D22899BA251D3A01958CC8116E33998B71391A1F0F3991B629。原 10.0.8 自包含 UGS 模式用关闭的本机代理模拟持续网络失败，确认进程存活、至少两次重试、health503；SelfHosted 原健康接口也通过。真实云请求与真实凭据未用于此隔离验证。
+- 后续用户先提供 v2 CloudReadFailed（Token201、首个 Private GET Http0），这仅代表该次诊断未获得可用读取结果，不足以确定持续网络中断或权限错误。紧接着服务器本机 health 实测 status=ok、ugsBridgeEnabled=true、ugsBridgeReady=true、有效期11.977秒；固定 Cloud Save 根地址无凭据、TLS1.2测试 HTTP404 / curl退出0。当前已有活跃确认租约、该次 HTTPS 连接成功，但仍待三次 LeaseHealthy/LeaseAdvancing 及游戏建队复测。不要因前次单个 Http0要求重装或更换密钥。
+
+## 2026-10-05 五人队伍匹配（原协议）
 
 - 大厅开始游戏自动创建最多五人的队伍，只展示自己的五个成员位置。房主开始匹配，其他成员准备/取消准备；两个已准备队伍可开局，允许人数不足五人且双方人数不同。服务端随机给整队分配红蓝阵营。
 - 现有 .NET AccountService 的 PartyStore / PartyMatchmaker 保存临时队伍和匹配预约，通过回环 UDP 查询空闲 NGO 专服。队伍不占用游戏进程，多场实际对局使用不同端口进程。临时状态在账号服务重启后清空。

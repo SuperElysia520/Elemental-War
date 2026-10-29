@@ -15,7 +15,7 @@ public static class PvpMigrationWorkbench
     [Serializable] private class Result
     {
         public string id, operation, project, error;
-        public bool success, playing, compiling;
+        public bool success, playing, compiling, paused;
         public string insecureHttpOption;
         public string[] scenes, recentErrors;
         public string[] missingSceneScripts, missingScenePrefabs;
@@ -83,6 +83,8 @@ public static class PvpMigrationWorkbench
                 case "build-server": Invoke("PvpMigrationBuildValidation", "BuildServer"); break;
                 case "build-lobby-client": Invoke("PvpMigrationBuildValidation", "BuildLobbyClient"); break;
                 case "build-lobby-server": Invoke("PvpMigrationBuildValidation", "BuildLobbyServer"); break;
+                case "build-ugs-pvp-client": Invoke("PvpMigrationBuildValidation", "BuildUgsClient"); break;
+                case "build-ugs-pvp-server": Invoke("PvpMigrationBuildValidation", "BuildUgsServer"); break;
                 case "setup-main-menu-character": Invoke("MainMenuCharacterSetup", "Apply"); break;
                 case "capture-main-menu": Invoke("MainMenuCharacterSetup", "CapturePreview"); break;
                 case "save-main-menu":
@@ -92,12 +94,24 @@ public static class PvpMigrationWorkbench
                         throw new InvalidOperationException("Main menu scene could not be saved.");
                     break;
                 case "validate-main-menu-runtime": Invoke("MainMenuFlowValidation", "Run"); break;
+                case "setup-login-scene": Invoke("LoginSceneSetup", "Apply"); break;
+                case "open-backend-setup": Invoke("HostedBackendSetupWindow", "Open"); break;
+                case "install-ugs-packages": Invoke("UgsPackageInstaller", "Install"); break;
+                case "open-ugs-setup": Invoke("UgsBackendSetupWindow", "Open"); break;
+                case "validate-ugs-config": Invoke("UgsBackendSetupWindow", "WriteConfigurationReport"); break;
+                case "validate-ugs-runtime": Invoke("UgsFlowValidation", "Run"); break;
+                case "audit-login-inputs": Invoke("LoginInputValidationAudit", "Run"); break;
+                case "validate-login-runtime": Invoke("LoginFlowValidation", "Run"); break;
+                case "validate-login-startup": Invoke("LoginStartupValidation", "Run"); break;
+                case "restart-temp-allocator-diagnostics": Invoke("LoginStartupValidation", "RestartWithDiagnostics"); break;
+                case "restart-after-temp-allocator-diagnostics": Invoke("LoginStartupValidation", "RestartWithoutDiagnostics"); break;
                 default: throw new InvalidOperationException("Unknown operation: " + request.operation);
             }
             result.success = true;
         }
         catch (Exception exception) { result.error = (exception.InnerException ?? exception).ToString(); }
         result.playing = EditorApplication.isPlaying;
+        result.paused = EditorApplication.isPaused;
         result.insecureHttpOption = PlayerSettings.insecureHttpOption.ToString();
         result.compiling = EditorApplication.isCompiling;
         var scenes = new List<string>();

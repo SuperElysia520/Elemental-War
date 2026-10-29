@@ -12,6 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8664050e965c47e7b57cdf583c43086b, type: 3}
   m_Name: AccountServiceSettings
   m_EditorClassIdentifier: 
+  backend: 1
+  ugsEnvironment: development
+  ugsProfileScript: FpsProfile
   publicBaseUrl: 
   serverBaseUrl: http://127.0.0.1:5080
   timeoutSeconds: 10

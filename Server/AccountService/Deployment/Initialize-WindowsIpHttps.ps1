@@ -35,6 +35,8 @@ Set-Acl -LiteralPath $state -AclObject $acl
 
 $channel = if ($Production) { 'production' } else { 'staging' }
 $acmeState = Join-Path $state ('acme-' + $channel)
+# Posh-ACME only honors POSHACME_HOME when the directory already exists at import time.
+New-Item -ItemType Directory -Force -Path $acmeState | Out-Null
 $env:POSHACME_HOME = $acmeState
 Import-Module Posh-ACME -MinimumVersion 4.34.0 -Force
 $ca = if ($Production) { 'LE_PROD' } else { 'LE_STAGE' }
