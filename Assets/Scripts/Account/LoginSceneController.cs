@@ -145,6 +145,7 @@ public sealed class LoginSceneController : MonoBehaviour
         if (!account.HasSession) { SetView(LoginViewState.Login, "请先登录账号。"); return; }
         if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MainMenu, out string error))
         { SetView(LoginViewState.Ready, error); return; }
+        LoginSceneBootstrap.PrepareLobbyEntry();
         processing = true;
         SetLoadingProgress(0f);
         SetView(LoginViewState.Loading, "正在进入游戏…");
@@ -177,7 +178,7 @@ public sealed class LoginSceneController : MonoBehaviour
         }
 
         SetLoadingProgress(1f);
-        // Render 100% before activating GameStart and destroying the Login scene.
+        // Render 100% before activating GameLobby and destroying the Login scene.
         yield return null;
         sceneLoadOperation.allowSceneActivation = true;
         yield return sceneLoadOperation;

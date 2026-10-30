@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Dedicated Server 从 GameStart 保留网络根对象，先载入用户制作的 GameLobby，再启动 NGO Server。
+/// Dedicated Server 在正式 GameLobby 中使用场景网络根对象启动 NGO Server。
 /// 普通客户端和编辑器 Play 模式默认不会执行；开发阶段可添加 -dedicatedPvpServer 参数模拟服务器进程。
 /// </summary>
 public static class DedicatedServerBootstrap
@@ -65,7 +65,7 @@ public static class DedicatedServerBootstrap
                 yield return SceneManager.LoadSceneAsync(GameFlowScenes.MultiplayerLobby, LoadSceneMode.Single);
             if (manager == null)
             {
-                Debug.LogError("[Dedicated PVP] GameStart 的 NetworkManager 未保留，服务器未启动。");
+                Debug.LogError("[Dedicated PVP] 大厅 NetworkManager 不可用，服务器未启动。");
                 yield break;
             }
             s_Started = manager.StartDedicatedPvpServer(GetIntArgument(PortArgument, 0));

@@ -53,6 +53,12 @@ public static class PvpMigrationWorkbench
                 case "status": break;
                 case "inspect-open-scene": InspectOpenScenes(result); break;
                 case "audit-lobby-layout": Invoke("LobbyLayoutAudit", "Run"); break;
+                case "audit-lobby-mvc": Invoke("LobbyMvcAudit", "Baseline"); break;
+                case "setup-lobby-mvc": Invoke("LobbyMvcSceneSetup", "Apply"); break;
+                case "audit-lobby-mvc-assets": Invoke("LobbyMvcValidation", "Audit"); break;
+                case "validate-lobby-mvc": Invoke("LobbyMvcValidation", "Run"); break;
+                case "finalize-lobby-mvc": Invoke("LobbyMvcSceneSetup", "FinalizeBindings"); break;
+                case "fix-lobby-mvc-typography": Invoke("LobbyMvcTypography", "Apply"); break;
                 case "bind-party-lobby": Invoke("LobbyRedesignSetup", "BindExisting"); break;
                 case "audit-party-lobby": Invoke("LobbyRedesignSetup", "Audit"); break;
                 case "validate-party-json": Invoke("LobbyRedesignSetup", "ValidateWireJson"); break;

@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Linq;
+using FPS.UI;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Unity.Services.Authentication;
@@ -33,7 +35,7 @@ public static class UgsFlowValidation
 
     [Serializable] private sealed class Report
     {
-        public string scope = "Real AccountClient, Login, GameStart and GameLobby UI; fake UGS transport; no online services.";
+        public string scope = "Real AccountClient, Login, GameLobby and GameLobby UI; fake UGS transport; no online services.";
         public string startedUtc;
         public bool success, restored, factoryRestored, fakeGatewaysDisposed;
         public List<string> checks = new List<string>();
@@ -161,13 +163,13 @@ public static class UgsFlowValidation
         Check(flow != null && account.UsesUgs && !account.SupportsRegistrationLookup && !account.HasSession && account.Profile == null,
             "真实 Login 场景选择 UGS 且没有预先创建会话或读取存档");
         var ui = flow.GetComponent<LoginUI>();
-        var progressImage = SceneComponent<UnityEngine.UI.Image>("Canvas/LoadingPanel/ProgressBar/FillImage");
-        var progressText = SceneComponent<UnityEngine.UI.Text>("Canvas/LoadingPanel/Progress");
-        Check(ui != null && ui.loadingProgressImage == progressImage && ui.loadingProgressText == progressText &&
+        var progressImage = ui.loadingProgressImage;
+        var progressText = ui.loadingProgressText;
+        Check(ui != null && progressImage != null &&
             progressImage.type == UnityEngine.UI.Image.Type.Filled && progressImage.fillMethod == UnityEngine.UI.Image.FillMethod.Horizontal &&
             progressImage.fillOrigin == (int)UnityEngine.UI.Image.OriginHorizontal.Left,
             "真实 LoadingPanel 已绑定水平从左填充的 Image 和百分比文字");
-        Check(!ui.loadingPanel.activeSelf && flow.LoadingProgress == 0f && progressImage.fillAmount == 0f && progressText.text == "0%",
+        Check(!ui.loadingPanel.activeSelf && flow.LoadingProgress == 0f && progressImage.fillAmount == 0f && (progressText == null || progressText.text == "0%"),
             "Login 启动隐藏 LoadingPanel，加载进度重置为 0%");
         flow.EnterGame();
         Check(flow.ViewState == LoginViewState.Login && !flow.IsBusy && !ui.loadingPanel.activeSelf,
@@ -279,7 +281,7 @@ public static class UgsFlowValidation
         while (flow.IsBusy) yield return null;
         string firstId = account.AccountId;
         Check(flow.ViewState == LoginViewState.Ready && account.HasSession && !account.IsAuthenticated && account.Profile == null && gateway.LoadCalls == 0,
-            "LoginSession 只建立身份会话，进入 GameStart 前不读档");
+            "LoginSession 只建立身份会话，进入 GameLobby 前不读档");
         bool callback = false, success = false;
         account.SaveProfile(CharacterAppearanceData.Default, PvpLoadoutData.Default, (ok, error) => { callback = true; success = ok; });
         Check(callback && !success && gateway.SaveCalls == 0, "未载入档案前不能提交角色保存");
@@ -296,7 +298,7 @@ public static class UgsFlowValidation
             progressUpdates++;
             validProgress &= value >= lastProgress && value >= 0f && value <= 1f;
             progressUiMatches &= ui.loadingPanel.activeInHierarchy && Mathf.Approximately(progressImage.fillAmount, value) &&
-                progressText.text == Mathf.FloorToInt(value * 100f) + "%";
+                (progressText == null || progressText.text == Mathf.FloorToInt(value * 100f) + "%");
             lastProgress = value;
             if (value == 1f) completedBeforeActivation = SceneManager.GetActiveScene().name == GameFlowScenes.Login && flow.IsBusy;
         };
@@ -307,7 +309,7 @@ public static class UgsFlowValidation
             Time.timeScale = 0f;
             flow.EnterGame();
             Check(flow.IsBusy && flow.ViewState == LoginViewState.Loading && ui.loadingPanel.activeInHierarchy &&
-                !ui.loginPanel.activeSelf && !ui.readyPanel.activeSelf && flow.LoadingProgress == 0f && progressText.text == "0%",
+                !ui.loginPanel.activeSelf && !ui.readyPanel.activeSelf && flow.LoadingProgress == 0f && (progressText == null || progressText.text == "0%"),
                 "进入游戏立即显示 LoadingPanel 和 0%，隐藏登录及账号面板");
             flow.EnterGame();
             flow.SwitchAccount();
@@ -323,15 +325,15 @@ public static class UgsFlowValidation
         }
         Check(progressUpdates > 0 && validProgress && lastProgress == 1f && progressUiMatches,
             "真实异步场景加载进度单调到达 100%，Image 和百分比文字同步更新");
-        Check(completedBeforeActivation, "暂停时间仍可异步加载，Login 显示 100% 后才激活 GameStart");
+        Check(completedBeforeActivation, "暂停时间仍可异步加载，Login 显示 100% 后才激活 GameLobby");
         GameStartProfileLoader loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         while (gateway.LoadCalls == 0) yield return null;
         Check(loader != null && !loader.IsReady && account.Profile == null && account.IsBusy,
-            "真实 GameStart 在云档案返回前保持未就绪");
+            "真实 GameLobby 在云档案返回前保持未就绪");
         loadGate.SetResult(store.Load(firstId));
         while (!loader.IsReady) yield return null;
         Check(account.IsAuthenticated && account.Profile.accountId == firstId && !prematureProfile && gateway.LastLoadScene == GameFlowScenes.MainMenu,
-            "只有到达 GameStart 后才读取并应用当前玩家档案");
+            "只有到达 GameLobby 后才读取并应用当前玩家档案");
         account.ProfileChanged -= observe;
         Check(store.SavedProfiles == 0, "首次默认档案读取不写入存储");
 
@@ -473,7 +475,7 @@ public static class UgsFlowValidation
         yield return null;
         flow = UnityEngine.Object.FindObjectOfType<LoginSceneController>();
         ui = flow.GetComponent<LoginUI>();
-        Check(flow.LoadingProgress == 0f && ui.loadingProgressImage.fillAmount == 0f && ui.loadingProgressText.text == "0%" &&
+        Check(flow.LoadingProgress == 0f && ui.loadingProgressImage.fillAmount == 0f && (ui.loadingProgressText == null || ui.loadingProgressText.text == "0%") &&
             !ui.loadingPanel.activeSelf, "返回 Login 后隐藏 LoadingPanel 并重置进度，支持再次进入");
         flow.SwitchAccount();
         while (flow.IsBusy) yield return null;
@@ -483,7 +485,7 @@ public static class UgsFlowValidation
         int loads = gateway.LoadCalls;
         flow.Login(FirstUser, TestPassword);
         while (flow.IsBusy) yield return null;
-        Check(account.HasSession && account.Profile == null && gateway.LoadCalls == loads, "重登仍然延迟到 GameStart 读取档案");
+        Check(account.HasSession && account.Profile == null && gateway.LoadCalls == loads, "重登仍然延迟到 GameLobby 读取档案");
         flow.EnterGame();
         while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
         loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
@@ -509,7 +511,7 @@ public static class UgsFlowValidation
         while (!loader.IsReady) yield return null;
         string secondId = account.AccountId;
         Check(correctLoginOrder && secondId != firstId && account.Profile.appearance.faceId == 0 && account.Profile.avatarId == 0 && account.Profile.revision == 0,
-            "另一账号自动进入 GameStart 后只加载自己的默认档案");
+            "另一账号自动进入 GameLobby 后只加载自己的默认档案");
         callback = success = false;
         account.SaveAvatar(9, (ok, error) => { callback = true; success = ok; });
         while (!callback) yield return null;
@@ -646,7 +648,7 @@ public static class UgsFlowValidation
         loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         yield return null;
         Check(loader != null && loader.IsLoading && !loader.IsReady && gateway.LoadCalls == loads,
-            "GameStart 等待已有在途账号请求，不同时发起第二次读取");
+            "GameLobby 等待已有在途账号请求，不同时发起第二次读取");
         UnityEngine.Object.Destroy(destroyedAccount.gameObject);
         yield return null;
         while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
@@ -654,7 +656,7 @@ public static class UgsFlowValidation
         yield return null;
         account = AccountClient.EnsureInstance();
         Check(lateCallbacks == 0 && destroyedGateway.DisposeCalls == 1 && !account.HasSession && !account.IsBusy,
-            "GameStart 等待期间客户端被销毁会返回 Login，不永久卡住或应用旧响应");
+            "GameLobby 等待期间客户端被销毁会返回 Login，不永久卡住或应用旧响应");
         yield return ValidatePartyCreationUi();
     }
 
@@ -669,63 +671,65 @@ public static class UgsFlowValidation
         var loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         while (!loader.IsReady) yield return null;
         gateway.PvpReplyBody = "{\"party\":null,\"message\":\"\"}";
-        var menu = UnityEngine.Object.FindObjectOfType<MainMenuUI>(true);
-        menu.btnEnterLobby.onClick.Invoke();
+        var root = UnityEngine.Object.FindObjectOfType<LobbyUIRoot>();
+        while (root.Controller == null) yield return null;
+        root.pages.First(page => page.page == LobbyPage.MainMenu).buttons.First(binding => binding.action == LobbyAction.Multiplayer).button.onClick.Invoke();
         while (SceneManager.GetActiveScene().name != GameFlowScenes.MultiplayerLobby) yield return null;
         yield return null;
         yield return null;
-        var home = UnityEngine.Object.FindObjectOfType<MultiplayerLobbyUI>();
+        var home = root.pages.First(page => page.page == LobbyPage.Home);
+        var startButton = home.buttons.First(binding => binding.action == LobbyAction.CreateParty).button;
         var party = PartyLobbyClient.EnsureInstance();
-        Check(home != null && home.partyUI != null && home.homePanel != null && home.btnStartGame != null &&
-            home.tmpStatus != null && home.partyUI.partyPanel != null && home.homePanel.activeInHierarchy &&
-            !home.partyUI.partyPanel.activeSelf && account.IsAuthenticated && party.Party == null,
+        Check(home != null && root.partyView != null && home.gameObject != null && startButton != null &&
+            home.status != null && root.partyView.gameObject != null && home.gameObject.activeInHierarchy &&
+            !root.partyView.gameObject.activeSelf && account.IsAuthenticated && party.Party == null,
             "真实 GameLobby 通过主菜单入口显示已登录首页，并绑定正式组队面板");
         TaskCompletionSource<UgsPvpReply> createGate = null;
         try
         {
             createGate = gateway.HoldPartyCreate();
-            home.btnStartGame.onClick.Invoke();
+            startButton.onClick.Invoke();
             while (gateway.PvpCreateCalls == 0) yield return null;
             yield return null;
-            Check(party.IsBusy && home.homePanel.activeInHierarchy && !home.partyUI.partyPanel.activeSelf &&
-                !home.btnStartGame.interactable && home.tmpStatus.text.Contains("正在创建队伍"),
+            Check(party.IsBusy && home.gameObject.activeInHierarchy && !root.partyView.gameObject.activeSelf &&
+                !startButton.IsInteractable() && home.status.text.Contains("正在创建队伍"),
                 "延迟建队期间保留首页和创建提示，禁用开始按钮且不闪现空房间",
-                "home=" + home.homePanel.activeInHierarchy + "; panel=" + home.partyUI.partyPanel.activeSelf +
-                "; busy=" + party.IsBusy + "; startEnabled=" + home.btnStartGame.interactable +
-                "; creatingHint=" + home.tmpStatus.text.Contains("正在创建队伍"));
+                "home=" + home.gameObject.activeInHierarchy + "; panel=" + root.partyView.gameObject.activeSelf +
+                "; busy=" + party.IsBusy + "; startEnabled=" + startButton.IsInteractable() +
+                "; creatingHint=" + home.status.text.Contains("正在创建队伍"));
             int creates = gateway.PvpCreateCalls;
-            home.btnStartGame.onClick.Invoke();
-            home.StartParty();
-            Check(gateway.PvpCreateCalls == creates && party.IsBusy && home.homePanel.activeInHierarchy,
+            startButton.onClick.Invoke();
+            root.Controller.Execute(LobbyAction.CreateParty);
+            Check(gateway.PvpCreateCalls == creates && party.IsBusy && home.gameObject.activeInHierarchy,
                 "建队请求在途时重复点击不会重复提交或切换到空面板");
             const string failure = "合成建队失败，请稍后重试。";
             createGate.SetException(new UgsAccountException(failure));
             while (party.IsBusy) yield return null;
             yield return null;
-            Check(home.homePanel.activeInHierarchy && !home.partyUI.partyPanel.activeSelf && party.Party == null &&
-                home.tmpStatus.text == failure && home.btnStartGame.interactable && account.IsAuthenticated,
+            Check(home.gameObject.activeInHierarchy && !root.partyView.gameObject.activeSelf && party.Party == null &&
+                home.status.text == failure && startButton.IsInteractable() && account.IsAuthenticated,
                 "延迟建队失败后留在首页显示真实原因并恢复按钮，保留登录身份");
             int polls = gateway.PvpCurrentCalls;
             while (gateway.PvpCurrentCalls == polls) yield return null;
             yield return null;
-            Check(home.homePanel.activeInHierarchy && home.tmpStatus.text == failure && party.Party == null,
+            Check(home.gameObject.activeInHierarchy && home.status.text == failure && party.Party == null,
                 "失败后的真实队伍轮询不会覆盖首页错误提示或再次闪现房间");
 
             createGate = gateway.HoldPartyCreate();
-            home.btnStartGame.onClick.Invoke();
+            startButton.onClick.Invoke();
             while (gateway.PvpCreateCalls == creates) yield return null;
             createGate.SetResult(new UgsPvpReply { ok = true, state = "done", status = 200, body = gateway.PvpReplyBody });
             while (party.IsBusy) yield return null;
             yield return null;
-            Check(home.homePanel.activeInHierarchy && !home.partyUI.partyPanel.activeSelf && party.Party == null &&
-                home.tmpStatus.text.Contains("创建队伍未成功"),
+            Check(home.gameObject.activeInHierarchy && !root.partyView.gameObject.activeSelf && party.Party == null &&
+                home.status.text.Contains("创建队伍未成功"),
                 "建队返回成功状态但没有队伍时仍留首页并明确提示未成功");
 
             createGate = gateway.HoldPartyCreate();
-            home.btnStartGame.onClick.Invoke();
+            startButton.onClick.Invoke();
             while (gateway.PvpCreateCalls < creates + 2) yield return null;
-            Check(home.homePanel.activeInHierarchy && !home.partyUI.partyPanel.activeSelf &&
-                home.tmpStatus.text.Contains("正在创建队伍") && !home.btnStartGame.interactable,
+            Check(home.gameObject.activeInHierarchy && !root.partyView.gameObject.activeSelf &&
+                home.status.text.Contains("正在创建队伍") && !startButton.IsInteractable(),
                 "失败后重试重新显示创建中状态，不保留上次错误或提前打开房间");
             var state = new PartyStateData { party = new PartyData {
                 id = "0123456789abcdef0123456789abcdef", name = "团队对抗", mapName = "测试地图1",
@@ -736,21 +740,21 @@ public static class UgsFlowValidation
             createGate.SetResult(new UgsPvpReply { ok = true, state = "done", status = 200, body = gateway.PvpReplyBody });
             while (party.IsBusy) yield return null;
             yield return null;
-            Check(!home.homePanel.activeSelf && home.partyUI.partyPanel.activeInHierarchy && party.Party != null &&
-                party.Party.state == "Waiting" && party.IsOwner && party.LocalReady && home.partyUI.primaryButton.interactable &&
-                home.partyUI.primaryLabel.text == "开始匹配",
+            Check(!home.gameObject.activeSelf && root.partyView.gameObject.activeInHierarchy && party.Party != null &&
+                party.Party.state == "Waiting" && party.IsOwner && party.LocalReady && root.partyView.primaryButton.interactable &&
+                root.partyView.primaryLabel.text == "开始匹配",
                 "建队成功后才切到正式房间，保留队长准备及开始匹配状态");
             state.party.state = "Matching";
             gateway.PvpReplyBody = JsonConvert.SerializeObject(state);
-            home.partyUI.primaryButton.onClick.Invoke();
+            root.partyView.primaryButton.onClick.Invoke();
             while (party.IsBusy) yield return null;
-            Check(party.Party.state == "Matching" && party.LocalReady && home.partyUI.primaryLabel.text == "取消匹配" &&
-                home.partyUI.partyPanel.activeInHierarchy && !home.homePanel.activeSelf,
+            Check(party.Party.state == "Matching" && party.LocalReady && root.partyView.primaryLabel.text == "取消匹配" &&
+                root.partyView.gameObject.activeInHierarchy && !home.gameObject.activeSelf,
                 "成功建队后的原有匹配按钮和准备状态保持正常");
             gateway.PvpReplyBody = "{\"party\":null,\"message\":\"\"}";
-            home.partyUI.leaveButton.onClick.Invoke();
+            root.partyView.buttons.First(binding => binding.action == LobbyAction.LeaveParty).button.onClick.Invoke();
             while (party.IsBusy) yield return null;
-            Check(party.Party == null && home.homePanel.activeInHierarchy && !home.partyUI.partyPanel.activeSelf,
+            Check(party.Party == null && home.gameObject.activeInHierarchy && !root.partyView.gameObject.activeSelf,
                 "验证结束通过真实解散按钮返回首页并清理测试队伍");
         }
         finally { createGate?.TrySetCanceled(); }

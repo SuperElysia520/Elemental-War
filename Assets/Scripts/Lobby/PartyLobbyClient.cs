@@ -121,6 +121,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
             { success = false; Status = "创建队伍未成功，请重试。"; }
         });
         requesting = false; IsBusy = false;
+        if (success && Party == null) Status = "";
         Changed?.Invoke();
         completed?.Invoke(success);
     }

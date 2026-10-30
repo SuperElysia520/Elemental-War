@@ -4,7 +4,8 @@ using UnityEngine;
 public static class GameFlowScenes
 {
     public const string Login = "Login";
-    public const string MainMenu = "GameStart";
+    // Both client menu stages are pages inside the authored GameLobby scene.
+    public const string MainMenu = "GameLobby";
     public const string MultiplayerLobby = "GameLobby";
     public const string PvpMatch = "GamePVP";
     public const string Match = PvpMatch;

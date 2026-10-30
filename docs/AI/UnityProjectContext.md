@@ -2,6 +2,20 @@
 
 <!-- unity-onboarding:generated:start -->
 
+## 2026-10-30 大厅 UI MVC 迁移
+
+- 核查范围为登录入口、大厅 UI、Prefab 和场景构建引用；基于提交 `c85800a` 及用户尚未提交的场景/素材修改。以下现状优先于本文较早的流程记录。
+- 用户已确认：`Login → GameLobby/MainMenu → GameLobby/HomePanel → 组队/匹配 → GamePVP → GameLobby`；MainMenu 是登录后的第一屏，联机按钮再打开 HomePanel。保留布局与素材，迁移大厅全部已有面板。GameStart 不参与正式构建，旧场景和旧脚本保留。
+- 新 UI 位于 `Assets/Scripts/UI/Mvc`。`LobbyUIRoot` 组合场景依赖，`LobbyController` / `CustomRoomController` 处理操作，`LobbyModel` / `CustomizationModel` 保存导航和编辑草稿，各 View 仅显示数据与发送按钮意图。账号与网络权威状态沿用现有服务。战斗血条使用的旧 UIManager 未改动。
+- `Assets/UI/Prefab/Mvc` 包含 MainMenu、Home、Party、Rooms、CustomRoom、Customization、Profile 七个页面，消息/确认弹窗、加载遮罩和身份显示。所有页面已作为 Prefab 实例绑定到场景，Prefab 内无外部场景对象引用；五个队伍角色留在场景显式绑定。原有两个 UI Prefab 资产未覆盖。
+- 两套相机与背景分别归入 `MainMenuPresentation`、`LobbyPresentation`，按页面启用。原主菜单 Lumine 只在对应页面显示，避免与首页角色重叠。身份显示读取真实 UID，玩家名在原文字区域内自适应。个人主页保留原页签，头像选择使用目录已有的 30 张素材（协议上限 32）。
+- `GameFlowScenes.MainMenu` 与 `MultiplayerLobby` 均指向 GameLobby；Build Settings 仍沿用用户启用的 Login/GameLobby/GamePVP。构建工具不再要求 GameStart；GamePVE 仅在用户启用时加入，否则菜单明确提示未就绪。专服从正式 GameLobby 启动并跳过账号/UI。
+- `LoginSceneBootstrap` 在 GameLobby 组合档案读取组件；兼容已有序列化的 `GameStartProfileLoader` 类名保留。Login 主动进入时重新读取档案，场景重入可复用已认证档案；显式 `LoadUserData()` 始终重新读取。
+- 开始建队在服务确认前保留首页，失败提示可见；统一返回与弹窗处理，编辑草稿只在云保存成功后提交，未保存返回需明确确认。房间页关闭停止查询，Controller 销毁时取消订阅并阻止迟到回调触碰旧 UI。
+- 沙箱内看不到现有 Unity 进程；进一步确认本机 2022.3 编辑器实际打开了未保存 GameLobby。已通过项目既有白名单工作台保存包含未保存修改的完整副本，再在现有编辑器迁移；副本及验证证据位于 `tmp/LobbyMvc`。没有关闭或重启用户编辑器，没有线上云请求。
+- 使用 `LobbyMvcValidation` 检查 Prefab 引用、原有布局以及真实 Login/GameLobby 中的按钮与生命周期；只替换 UGS 传输边界。原 LoginFlowValidation/UgsFlowValidation 的 UI 断言同步到 MVC 入口。完整说明见 [LobbyMvcUI.md](LobbyMvcUI.md)，最终结果以 `tmp/LobbyMvc/runtime-validation.json` 为准。
+- 最终证据：Unity 实际编译通过；24 项资产检查、65 项场景离线检查通过，无新增运行错误，162 个原有 UI 子对象布局保留。原 UGS 的 94 项功能断言完成，但报告仍因两条已有 Visual Scripting 初始化异常为 success=false。场景/Prefab 运行前后哈希一致，编辑器恢复已保存、停止的 GameLobby；公网双端比赛和重新打包未执行。
+
 ## 项目概况
 
 - 项目根目录：`E:/Unity资产/FPS`

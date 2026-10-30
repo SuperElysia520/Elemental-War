@@ -469,7 +469,15 @@ public class LanDiscovery : MonoBehaviour
         while (m_DedicatedQueryClient.Available > 0)
         {
             IPEndPoint remote = null;
-            byte[] data = m_DedicatedQueryClient.Receive(ref remote);
+            byte[] data;
+            try { data = m_DedicatedQueryClient.Receive(ref remote); }
+            catch (SocketException exception) when (exception.SocketErrorCode == SocketError.ConnectionReset ||
+                                                    exception.SocketErrorCode == SocketError.ConnectionRefused)
+            {
+                // Windows reports ICMP port-unreachable as a receive error on UDP queries.
+                // A closed server slot is an absent response; keep querying the remaining slots.
+                continue;
+            }
             HandleIncoming(data, remote, DedicatedResponseHeader, true);
         }
     }

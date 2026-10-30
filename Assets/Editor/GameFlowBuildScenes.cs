@@ -12,11 +12,11 @@ public static class GameFlowBuildScenes
         var enabled = EditorBuildSettings.scenes.Where(scene => scene.enabled).ToArray();
         var required = new List<string>
         {
-            GameFlowScenes.MainMenu,
             GameFlowScenes.MultiplayerLobby,
             GameFlowScenes.PvpMatch,
         };
-        if (!server) required.Add("GamePVE");
+        // PVE is optional while only the Login/Lobby/PVP flow is enabled by the author.
+        if (!server && enabled.Any(scene => Path.GetFileNameWithoutExtension(scene.path) == "GamePVE")) required.Add("GamePVE");
         var result = new List<string>();
         if (!server) required.Insert(0, GameFlowScenes.Login);
         foreach (string name in required)

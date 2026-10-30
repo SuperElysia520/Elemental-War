@@ -1,14 +1,16 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-/// <summary>Scene integration without creating any UI. Dedicated servers retain their GameStart startup.</summary>
+/// <summary>Fetch account data on entering GameLobby; dedicated servers do not create account UI.</summary>
 public static class LoginSceneBootstrap
 {
     private static string pendingMessage;
+    private static bool refreshNextLobbyEntry;
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void Reset()
     {
         pendingMessage = "";
+        refreshNextLobbyEntry = false;
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -21,11 +23,14 @@ public static class LoginSceneBootstrap
     private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         if (scene.name != GameFlowScenes.MainMenu) return;
-        if (FindLoader(scene) != null) return;
-        var root = new GameObject("GameStartProfileLoader");
+        var existing = FindLoader(scene);
+        if (existing != null) { existing.ReuseAuthenticatedProfile = !refreshNextLobbyEntry; refreshNextLobbyEntry = false; return; }
+        var root = new GameObject("LobbyProfileLoader");
         SceneManager.MoveGameObjectToScene(root, scene);
-        root.AddComponent<GameStartProfileLoader>();
+        root.AddComponent<GameStartProfileLoader>().ReuseAuthenticatedProfile = !refreshNextLobbyEntry;
+        refreshNextLobbyEntry = false;
     }
+    public static void PrepareLobbyEntry() => refreshNextLobbyEntry = true;
     public static GameStartProfileLoader FindLoader(Scene scene)
     {
         foreach (GameObject root in scene.GetRootGameObjects())

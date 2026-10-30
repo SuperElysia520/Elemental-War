@@ -6,8 +6,9 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
+using FPS.UI;
 
-/// <summary>Real Login → GameStart HTTP smoke test against an isolated local service, without authoring UI.</summary>
+/// <summary>Real Login → GameLobby HTTP smoke test against an isolated local service, without authoring UI.</summary>
 [InitializeOnLoad]
 public static class LoginFlowValidation
 {
@@ -127,7 +128,7 @@ public static class LoginFlowValidation
         flow.Login(username, password);
         while (flow.IsBusy) yield return null;
         Check(flow.ViewState == LoginViewState.Ready && account.HasSession && !account.IsAuthenticated && account.Profile == null,
-            "登录成功只建立会话，进入 GameStart 前未应用云档案");
+            "登录成功只建立会话，进入 GameLobby 前未应用云档案");
         string firstId = account.AccountId;
         Check(flow.AccountId == firstId && flow.Username == username, "Login 暴露真实 UID 和账号名");
         bool prematureProfile = false;
@@ -136,19 +137,21 @@ public static class LoginFlowValidation
         flow.EnterGame();
         while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
         GameStartProfileLoader loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
-        Check(loader != null, "进入真实 GameStart 场景并创建数据读取组件");
+        Check(loader != null, "进入真实 GameLobby 场景并创建数据读取组件");
         while (!loader.IsReady) yield return null;
-        Check(account.IsAuthenticated && account.Profile.accountId == firstId && !prematureProfile, "到达 GameStart 后才读取当前账号档案");
+        Check(account.IsAuthenticated && account.Profile.accountId == firstId && !prematureProfile, "到达 GameLobby 后才读取当前账号档案");
         yield return new WaitForSecondsRealtime(0.3f);
-        Check(MainMenuUI.instance != null && MainMenuUI.instance.gameObject.activeInHierarchy, "读取成功后才显示主菜单");
+        var mvc = UnityEngine.Object.FindObjectOfType<LobbyUIRoot>();
+        while (mvc.Controller == null) yield return null;
+        Check(mvc.Controller.Model.Page == LobbyPage.MainMenu, "读取成功后才显示主菜单");
         bool done = false, ok = false;
         CharacterAppearanceData appearance = CharacterAppearanceData.Default;
         appearance.faceId = 3;
         account.SaveProfile(appearance, PvpLoadoutData.Default, (success, error) => { done = true; ok = success; });
         while (!done) yield return null;
         Check(ok && account.Profile.appearance.faceId == 3, "当前账号的角色外观仍可保存");
-        CharacterCustomizationUI.Show();
-        var customization = UnityEngine.Object.FindObjectOfType<CharacterCustomizationUI>();
+        mvc.Controller.Execute(LobbyAction.Character);
+        var customization = mvc.customizationView;
         Check(customization != null && customization.GetComponentsInChildren<UnityEngine.UI.InputField>(true).Length == 0,
             "角色定制界面已移除注册登录输入框");
         foreach (UnityEngine.UI.Button button in customization.GetComponentsInChildren<UnityEngine.UI.Button>(true))
@@ -156,7 +159,7 @@ public static class LoginFlowValidation
             var label = button.GetComponentInChildren<UnityEngine.UI.Text>();
             Check(label == null || (label.text != "登录" && label.text != "注册" && label.text != "退出账号"), "角色定制按钮只保留档案功能：" + (label != null ? label.text : ""));
         }
-        UnityEngine.Object.Destroy(customization.gameObject);
+        mvc.Controller.Back();
         loader.ReturnToLogin();
         while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
         yield return null;
@@ -194,7 +197,7 @@ public static class LoginFlowValidation
         loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         while (!loader.IsReady) yield return null;
         Check(correctLoginOrder && account.Profile.accountId != firstId && account.Profile.appearance.faceId == 0,
-            "另一个账号自动进入 GameStart，读取自己的档案而不沿用前一账号数据");
+            "另一个账号自动进入 GameLobby，读取自己的档案而不沿用前一账号数据");
         using (var revoke = new UnityWebRequest(Endpoint + "/api/auth/logout", "POST"))
         {
             revoke.downloadHandler = new DownloadHandlerBuffer();
@@ -210,7 +213,7 @@ public static class LoginFlowValidation
         SceneManager.LoadSceneAsync(GameFlowScenes.MainMenu);
         while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
         while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
-        Check(account.Profile == null, "未登录直接进入 GameStart 会返回 Login");
+        Check(account.Profile == null, "未登录直接进入 GameLobby 会返回 Login");
         account.ProfileChanged -= observe;
         Complete(null);
     }

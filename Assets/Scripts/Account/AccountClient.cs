@@ -74,7 +74,7 @@ public sealed partial class AccountClient : MonoBehaviour
     public void Login(string username, string password, Action<bool, string> completed = null)
         => Authenticate("login", username, password, completed);
 
-    /// <summary>Authenticate in Login; defer applying the profile until GameStart requests it.</summary>
+    /// <summary>Authenticate in Login; defer applying the profile until GameLobby requests it.</summary>
     public void LoginSession(string username, string password, Action<bool, string> completed = null)
         => Authenticate("login", username, password, completed, false);
 
