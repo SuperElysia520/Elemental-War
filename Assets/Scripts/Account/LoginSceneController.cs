@@ -180,7 +180,7 @@ public sealed class LoginSceneController : MonoBehaviour
         if (RequiresInitialName)
         {
             processing = false;
-            SetView(LoginViewState.InitialName, "请设置你的游戏名称（1–20字）。");
+            SetView(LoginViewState.InitialName, DisplayNameRules.Hint);
             yield break;
         }
         yield return LoadLobbyScene();
@@ -193,8 +193,8 @@ public sealed class LoginSceneController : MonoBehaviour
         name = (name ?? "").Trim();
         var value = new PersonalProfileData
         { displayName = name, gender = account.Profile.personal?.gender ?? 0, signature = account.Profile.personal?.signature ?? "" };
-        if (string.IsNullOrWhiteSpace(name) || !PersonalProfileData.IsValid(value))
-        { SetView(LoginViewState.InitialName, "请输入1–20字的名称，请勿使用控制字符或尖括号。"); return; }
+        if (!DisplayNameRules.IsValid(name) || !PersonalProfileData.IsValid(value))
+        { SetView(LoginViewState.InitialName, DisplayNameRules.Error); return; }
         processing = true;
         SetView(LoginViewState.InitialName, "正在保存名称…");
         account.SavePersonalProfile(value, (ok, error) =>

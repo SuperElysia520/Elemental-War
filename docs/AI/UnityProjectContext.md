@@ -191,3 +191,11 @@
 `ProjectSettings/ProjectVersion.txt`、`ProjectSettings/ProjectSettings.asset`、`ProjectSettings/EditorBuildSettings.asset`、`Packages/manifest.json`、`README.md`、`Assets/Scenes/GameStart.unity`、`Assets/Scripts/Lobby/LobbyManager.cs`、`Assets/Scripts/Lobby/LanDiscovery.cs`、`Assets/Scripts/Lobby/DedicatedServerBootstrap.cs`、`Assets/Editor/PvpDedicatedServerBuilder.cs`。
 
 <!-- unity-onboarding:generated:end -->
+
+## 2026-11-12 旧版命名输入框与加权名称长度
+
+- InitialNamePanel 用户已换成旧版 InputField/Text；重新绑定现有 NameInput 与 Confirm，移除 InitialNamePanelView.status，保留作者 Status 的固定规则提示及原布局。输入框失去焦点不提交，回车和按钮确认仍走 LoginSceneController。
+- 首次命名与 ProfilePanel 改名共用 DisplayNameRules：汉字计2，ASCII 字母/数字计1，加权总长1–12。输入原始字符上限12，提交时另做加权校验；空名、超限及其他字符不保存。AccountClient 与 FpsProfile 云端均检查新名称。
+- 保留旧20字符云存档的读取契约。旧名称不自动截断，保持旧名称时仍可修改性别和签名；重新命名须遵守新规则。
+- Unity 实际 Login/GameLobby 场景验证125项、FpsProfile 离线云脚本115项通过。编辑器恢复原 GameLobby，未新增运行错误；既有 Visual Scripting 初始化异常仍在基线中。证据与修改前资产副本：tmp/NameRules20261112。
+- 本轮未更新真实 UGS 或雨云，也未重建上一轮压缩包。部署本轮改动需重建客户端并重新发布 FpsProfile.js，云端参数表不变；bridge/专服继续兼容这些更短的新名称。

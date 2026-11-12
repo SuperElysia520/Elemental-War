@@ -90,7 +90,9 @@ public sealed partial class AccountClient
     public void SavePersonalProfile(PersonalProfileData personal, Action<bool, string> completed = null)
     {
         if (!IsAuthenticated) { RejectMissingSession(completed); return; }
-        if (!PersonalProfileData.IsValid(personal)) { completed?.Invoke(false, "名字最多20字，签名最多80字，请勿输入控制字符或尖括号。"); return; }
+        if (!PersonalProfileData.IsValid(personal)) { completed?.Invoke(false, "个人资料无效，签名最多80字，请勿输入控制字符或尖括号。"); return; }
+        if (personal.displayName != (Profile.personal?.displayName ?? "") && !DisplayNameRules.IsValid(personal.displayName))
+        { completed?.Invoke(false, DisplayNameRules.Error); return; }
         if (!UsesUgs || !(GetUgsGateway() is IUgsPersonalProfileGateway gateway))
         { completed?.Invoke(false, "当前账号服务尚未支持修改个人资料。"); return; }
         string id = AccountId;

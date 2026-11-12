@@ -1,5 +1,4 @@
 using System;
-using TMPro;
 using UnityEngine;
 
 /// <summary>Displays the authored first-name panel and forwards confirmation to the login flow.</summary>
@@ -7,9 +6,8 @@ using UnityEngine;
 [RequireComponent(typeof(CanvasGroup))]
 public sealed class InitialNamePanelView : MonoBehaviour
 {
-    public TMP_InputField nameInput;
+    public UnityEngine.UI.InputField nameInput;
     public UnityEngine.UI.Button confirmButton;
-    public TMP_Text status;
     private CanvasGroup group;
     public event Action<string> Confirmed;
 
@@ -17,17 +15,23 @@ public sealed class InitialNamePanelView : MonoBehaviour
     {
         group = GetComponent<CanvasGroup>();
         confirmButton.onClick.AddListener(Submit);
-        nameInput.onSubmit.AddListener(SubmitText);
+        nameInput.characterLimit = DisplayNameRules.MaxLength;
+        nameInput.lineType = UnityEngine.UI.InputField.LineType.SingleLine;
+        nameInput.onEndEdit.AddListener(SubmitText);
     }
     private void OnDestroy()
     {
         if (confirmButton != null) confirmButton.onClick.RemoveListener(Submit);
-        if (nameInput != null) nameInput.onSubmit.RemoveListener(SubmitText);
+        if (nameInput != null) nameInput.onEndEdit.RemoveListener(SubmitText);
     }
     private void Submit() => Confirmed?.Invoke(nameInput.text);
-    private void SubmitText(string value) => Submit();
+    private void SubmitText(string value)
+    {
+        // Legacy onEndEdit also fires when clicking elsewhere. Only Enter submits.
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter)) Submit();
+    }
 
-    public void Present(bool visible, bool busy, string message)
+    public void Present(bool visible, bool busy)
     {
         bool opening = visible && !gameObject.activeSelf;
         gameObject.SetActive(visible);
@@ -35,7 +39,6 @@ public sealed class InitialNamePanelView : MonoBehaviour
         if (group == null) group = GetComponent<CanvasGroup>();
         group.interactable = !busy; group.blocksRaycasts = true;
         nameInput.interactable = !busy; confirmButton.interactable = !busy;
-        if (status != null) status.text = message;
         if (opening)
         {
             nameInput.SetTextWithoutNotify("");

@@ -175,6 +175,12 @@ public static class LobbyMvcValidation
     }
     private static IEnumerator Probe()
     {
+        foreach (var valid in new[] { "名字测试一二", "Abc123Xyz789", "名字测试一AB", "旅行者123456", "𠮷𠮷𠮷𠮷𠮷𠮷", "A", "名" })
+            Check(DisplayNameRules.IsValid(valid), "Accepts a valid weighted name: " + valid);
+        foreach (var invalid in new[] { "", "名字测试一二三", "Abc123Xyz7890", "名字测试一ABC", "名字测试一二A", "a b", "name_1", "🙂", "\uD840" })
+            Check(!DisplayNameRules.IsValid(invalid), "Rejects an invalid/overweight name: " + invalid);
+        Check(DisplayNameRules.TryGetLength("名字测试一AB", out int mixedLength) && mixedLength == 12, "Five Han characters and two ASCII characters have weighted length 12");
+        Check(PersonalProfileData.IsValid(new PersonalProfileData { displayName = "LegacyLongName123" }), "Old cloud names remain readable without being silently renamed");
         yield return Wait(() => UnityEngine.Object.FindObjectOfType<LoginSceneController>() != null, "Login scene initialization");
         var flow = UnityEngine.Object.FindObjectOfType<LoginSceneController>();
         flow.enterGameAfterLogin = false;
@@ -213,11 +219,20 @@ public static class LobbyMvcValidation
         Check(SceneManager.GetActiveScene().name == "Login" && ui.initialNamePanel != null && ui.initialNamePanel.gameObject.activeInHierarchy && !ui.loadingPanel.activeSelf && account.Profile.personal == null,
             "First authenticated entry without a cloud display name opens the authored InitialNamePanel before loading GameLobby");
         var initial = ui.initialNamePanel;
+        var initialHint = initial.transform.Find("bc/NameBc/Status").GetComponent<UnityEngine.UI.Text>();
+        string hintText = initialHint.text;
+        Check(initial.nameInput != null && initial.nameInput.characterLimit == 12 && initial.nameInput.textComponent != null,
+            "Initial name panel binds the authored legacy InputField and legacy Text");
         yield return Capture("initial-name");
         Check(initial.nameInput.text == "", "Initial name input starts empty rather than using the login username");
         initial.nameInput.text = "   "; initial.confirmButton.onClick.Invoke();
         initial.nameInput.text = "<b>bad</b>"; initial.confirmButton.onClick.Invoke();
-        Check(fake.PersonalCalls == 0 && flow.ViewState == LoginViewState.InitialName && initial.status.text.Contains("1–20"), "Empty and rich-text initial names are rejected locally with visible feedback");
+        initial.nameInput.text = "名字测试一ABC"; initial.confirmButton.onClick.Invoke();
+        Check(fake.PersonalCalls == 0 && flow.ViewState == LoginViewState.InitialName && flow.Message == DisplayNameRules.Error && initialHint.text == hintText,
+            "Empty, rich-text and overweight mixed names are rejected while the authored Status stays unchanged");
+        yield return Capture("initial-name-invalid");
+        initial.nameInput.text = "名字测试一AB"; initial.nameInput.onEndEdit.Invoke(initial.nameInput.text);
+        Check(fake.PersonalCalls == 0, "Legacy input losing focus does not submit the name");
         Canvas.ForceUpdateCanvases();
         var initialCanvas = initial.GetComponentInParent<Canvas>();
         var initialRect = (RectTransform)initial.confirmButton.transform;
@@ -229,9 +244,9 @@ public static class LobbyMvcValidation
         initial.nameInput.text = "初始旅行者";
         var initialGate = fake.PersonalGate = new TaskCompletionSource<bool>(); fake.FailPersonal = true;
         initial.confirmButton.onClick.Invoke(); initial.confirmButton.onClick.Invoke(); flow.EnterGame();
-        Check(flow.IsBusy && !initial.confirmButton.interactable && fake.PersonalCalls == 1 && SceneManager.GetActiveScene().name == "Login", "Pending initial-name save blocks duplicate confirmation and premature game entry");
+        Check(flow.IsBusy && !initial.confirmButton.interactable && fake.PersonalCalls == 1 && SceneManager.GetActiveScene().name == "Login" && initialHint.text == hintText, "Pending initial-name save blocks duplicate confirmation and preserves the static rule hint");
         initialGate.SetResult(true); yield return Wait(() => !flow.IsBusy, "Initial name save failure");
-        Check(flow.ViewState == LoginViewState.InitialName && initial.nameInput.text == "初始旅行者" && initial.status.text.Contains("失败") && account.Profile.personal == null,
+        Check(flow.ViewState == LoginViewState.InitialName && initial.nameInput.text == "初始旅行者" && flow.Message.Contains("失败") && initialHint.text == hintText && account.Profile.personal == null,
             "Failed initial-name save stays on the panel and retains the input without applying a local-only name");
         yield return Capture("initial-name-retry");
         initial.confirmButton.onClick.Invoke();
@@ -296,6 +311,13 @@ public static class LobbyMvcValidation
         Check(!redesigned.overview.activeSelf && redesigned.information.activeSelf && redesigned.informationButton.image.color == redesigned.selectedTabColor && redesigned.firstPageButton.image.color != redesigned.selectedTabColor, "Information tab exclusively selects its page and yellow button");
         redesigned.editNameButton.onClick.Invoke();
         Check(redesigned.nameEditor.activeSelf && redesigned.nameInput.text == account.Profile.DisplayName, "Edit name opens the existing dialog with current display name");
+        Check(redesigned.nameInput.characterLimit == 12, "Profile name editor has the same legacy input character ceiling");
+        foreach (var invalidName in new[] { "", "名字测试一二三", "名字测试一ABC", "A_1" })
+        {
+            redesigned.nameInput.text = invalidName; redesigned.confirmNameButton.onClick.Invoke();
+            Check(fake.PersonalCalls == 1 && controller.IsModalOpen && redesigned.nameEditor.activeSelf, "Profile rejects invalid rename without a cloud write: " + invalidName);
+            root.messageDialog.confirmButton.onClick.Invoke();
+        }
         int characterRevision = account.Profile.revision; string loginName = account.Username;
         redesigned.nameInput.text = "测试旅行者";
         var personalGate = fake.PersonalGate = new TaskCompletionSource<bool>();

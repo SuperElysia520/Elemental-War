@@ -112,7 +112,7 @@ Unity 运行时检查入口：`Tools > FPS > Login > Validate Runtime Flow (Loca
 
 ## 2026-11-12 首次设置游戏名称
 
-UGS 玩家在 Login 的 LoadingPanel 读取档案后，如果 personal.displayName 尚未设置，先展示用户制作的 InitialNamePanel。确认按钮与输入框回车均调用 LoginSceneController.ConfirmInitialName；名称为1–20字，保存使用已有 AccountClient.SavePersonalProfile / FpsProfile personal 操作，保留性别和签名。只有云端成功确认才继续加载大厅；失败时面板保留输入并显示原因，保存中禁用重复确认。已设置名称的账号直接继续原加载流程，登录用户名和 UID 不变。旧 SelfHosted 账号不进入这个 UGS 命名步骤。
+UGS 玩家在 Login 的 LoadingPanel 读取档案后，如果 personal.displayName 尚未设置，先展示用户制作的 InitialNamePanel。确认按钮与输入框回车均调用 LoginSceneController.ConfirmInitialName；输入框使用旧版 UnityEngine.UI.InputField，失去焦点不会提交。名称只使用汉字、英文字母与数字，汉字计2、英文字母/数字计1，总计1–12。保存使用已有 AccountClient.SavePersonalProfile / FpsProfile personal 操作，保留性别和签名。只有云端成功确认才继续加载大厅；失败时面板保留输入，保存中禁用重复确认。Status 为用户制作的静态规则提示，不绑定或改写为保存状态；错误仍由 LoginUI 的账号提示显示。已设置名称的账号直接继续原加载流程，登录用户名和 UID 不变。旧 SelfHosted 账号不进入这个 UGS 命名步骤。
 
 面板已作为 Prefab 实例绑定到 LoginUI.initialNamePanel。Tools/FPS/Login/Bind Initial Name Panel 可重新接线；先备份开放场景和原 Prefab，再只保存 Login。正常调整 UI 仍编辑原 Prefab，不需要手工添加 Button OnClick；InitialNamePanelView 在 Awake 注册并在销毁时清理监听。
 

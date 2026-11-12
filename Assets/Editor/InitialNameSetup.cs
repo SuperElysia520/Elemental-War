@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -11,7 +10,7 @@ public static class InitialNameSetup
 {
     private const string Prefab = "Assets/Resource/UI/Prefab/Mvc/InitialNamePanel.prefab";
     private const string Login = "Assets/Scenes/Login.unity";
-    private const string Output = "tmp/InitialName20261112";
+    private const string Output = "tmp/NameRules20261112";
 
     [MenuItem("Tools/FPS/Login/Bind Initial Name Panel")]
     public static void Apply()
@@ -30,30 +29,30 @@ public static class InitialNameSetup
         try
         {
             var view = contents.GetComponent<InitialNamePanelView>() ?? contents.AddComponent<InitialNamePanelView>();
-            view.nameInput = contents.transform.Find("bc/NameBc/nameInput").GetComponent<TMP_InputField>();
+            view.nameInput = contents.transform.Find("bc/NameBc/NameInput").GetComponent<UnityEngine.UI.InputField>();
             view.confirmButton = contents.transform.Find("bc/NameBc/Confirm").GetComponent<UnityEngine.UI.Button>();
-            view.nameInput.characterLimit = 20; view.nameInput.richText = false; view.nameInput.lineType = TMP_InputField.LineType.SingleLine;
-            if (view.nameInput.placeholder is TMP_Text placeholder) placeholder.text = "请输入游戏名称";
-            view.nameInput.textComponent.richText = false;
-            view.nameInput.textComponent.enableAutoSizing = true; view.nameInput.textComponent.fontSizeMin = 18;
-            view.nameInput.textComponent.fontSizeMax = view.nameInput.textComponent.fontSize;
-            var panel = contents.transform.Find("bc/NameBc");
-            var status = panel.Find("Status")?.GetComponent<TMP_Text>();
-            if (status == null)
-            {
-                var go = new GameObject("Status", typeof(RectTransform), typeof(TextMeshProUGUI));
-                go.transform.SetParent(panel, false);
-                status = go.GetComponent<TMP_Text>(); status.font = view.nameInput.textComponent.font;
-                var rect = (RectTransform)go.transform;
-                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-                rect.anchoredPosition = new Vector2(0, -160); rect.sizeDelta = new Vector2(700, 55);
-            }
-            status.fontSize = 22; status.enableAutoSizing = true; status.fontSizeMin = 18; status.fontSizeMax = 22;
-            status.alignment = TextAlignmentOptions.Center; status.richText = false; status.raycastTarget = false; status.color = Color.white;
-            status.text = "请设置你的游戏名称（1–20字）。"; view.status = status;
+            view.nameInput.characterLimit = DisplayNameRules.MaxLength;
+            view.nameInput.lineType = UnityEngine.UI.InputField.LineType.SingleLine;
+            view.nameInput.contentType = UnityEngine.UI.InputField.ContentType.Standard;
+            view.nameInput.textComponent.supportRichText = false;
+            // Status is the author's static rule hint, not an output for login state.
+            var hint = contents.transform.Find("bc/NameBc/Status")?.GetComponent<UnityEngine.UI.Text>();
+            if (hint != null) hint.raycastTarget = false;
             PrefabUtility.SaveAsPrefabAsset(contents, Prefab);
         }
         finally { PrefabUtility.UnloadPrefabContents(contents); }
+
+        const string profilePath = "Assets/Resource/UI/Prefab/Mvc/ProfilePanel.prefab";
+        if (!File.Exists(Output + "/ProfilePanel.before.prefab")) File.Copy(profilePath, Output + "/ProfilePanel.before.prefab");
+        var profileContents = PrefabUtility.LoadPrefabContents(profilePath);
+        try
+        {
+            var profile = profileContents.GetComponent<FPS.UI.ProfilePanelView>();
+            profile.nameInput.characterLimit = DisplayNameRules.MaxLength;
+            profile.nameInput.textComponent.supportRichText = false;
+            PrefabUtility.SaveAsPrefabAsset(profileContents, profilePath);
+        }
+        finally { PrefabUtility.UnloadPrefabContents(profileContents); }
 
         var active = SceneManager.GetActiveScene();
         var login = SceneManager.GetSceneByPath(Login);

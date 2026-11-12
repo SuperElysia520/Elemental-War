@@ -30,6 +30,7 @@ namespace FPS.UI
         protected override void Awake()
         {
             base.Awake(); choiceActions = new UnityAction[choiceButtons.Length];
+            if (nameInput != null) nameInput.characterLimit = DisplayNameRules.MaxLength;
             for (int i = 0; i < choiceButtons.Length; i++)
             {
                 byte id = (byte)i; choiceActions[i] = () => AvatarRequested?.Invoke(id);
@@ -119,7 +120,7 @@ namespace FPS.UI
         };
         private void SaveName()
         {
-            if (personalPending || currentProfile == null || string.IsNullOrWhiteSpace(nameInput.text)) return;
+            if (personalPending || currentProfile == null) return;
             var value = Personal(); value.displayName = nameInput.text.Trim(); Submit(value);
         }
         private void SelectMale(bool selected)
@@ -142,7 +143,8 @@ namespace FPS.UI
         {
             personalPending = false;
             if (success) { signatureDirty = false; CloseNameEditor(); }
-            if (!success && signatureInput != null) signatureInput.ActivateInputField();
+            if (!success && nameEditor != null && nameEditor.activeSelf) nameInput.ActivateInputField();
+            else if (!success && signatureInput != null) signatureInput.ActivateInputField();
         }
         private void RenderCareer(PlayerCareerRecord career)
         {

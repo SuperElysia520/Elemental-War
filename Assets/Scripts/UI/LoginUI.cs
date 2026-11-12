@@ -95,7 +95,7 @@ public sealed class LoginUI : MonoBehaviour
         SetPanel(registrationPanel, state == LoginViewState.Registration);
         SetPanel(readyPanel, state == LoginViewState.Ready);
         SetPanel(loadingPanel, state == LoginViewState.Loading);
-        if (initialNamePanel != null) initialNamePanel.Present(state == LoginViewState.InitialName, controller.IsBusy, controller.Message);
+        if (initialNamePanel != null) initialNamePanel.Present(state == LoginViewState.InitialName, controller.IsBusy);
         RefreshLoadingProgress(controller.LoadingProgress);
         if (loadingStatusText != null) loadingStatusText.text = controller.Message;
         if (usernameText != null) usernameText.text = controller.Username;

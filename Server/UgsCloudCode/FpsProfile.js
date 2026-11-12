@@ -52,10 +52,26 @@ function validLoadout(value) {
 function copy(value) { return JSON.parse(JSON.stringify(value)); }
 
 function validPersonal(value) {
+  // Keep existing saves readable; newly chosen names use the weighted rule below.
   return fields(value, ["displayName", "gender", "signature"]) && integer(value.gender, 2) &&
     typeof value.displayName === "string" && value.displayName.length <= 20 && value.displayName === value.displayName.trim() &&
     typeof value.signature === "string" && value.signature.length <= 80 &&
     !/[\x00-\x1f\x7f-\x9f<>]/.test(value.displayName + value.signature);
+}
+
+function validDisplayName(name) {
+  if (typeof name !== "string" || !name.length) return false;
+  let length = 0;
+  for (const character of name) {
+    const code = character.codePointAt(0);
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57)) length++;
+    else if ((code >= 0x3400 && code <= 0x4DBF) || (code >= 0x4E00 && code <= 0x9FFF) ||
+             (code >= 0xF900 && code <= 0xFAFF) || (code >= 0x20000 && code <= 0x2FFFF) ||
+             (code >= 0x30000 && code <= 0x3FFFF)) length += 2;
+    else return false;
+    if (length > 12) return false;
+  }
+  return true;
 }
 
 function defaultProfile(playerId, username) {
@@ -140,6 +156,8 @@ module.exports = async ({ params, context, logger }) => {
       const revision = item ? item.value.revision : 0;
       if (params.revision !== revision) fail("profile_conflict");
       if (revision === MAX_REVISION) fail("revision_exhausted");
+      const previousName = item ? item.value.personal.displayName : "";
+      if (params.personal.displayName !== previousName && !validDisplayName(params.personal.displayName)) fail("invalid_profile");
       const value = { revision: revision + 1, personal: copy(params.personal) };
       const body = { key: PERSONAL_KEY, value };
       if (item) body.writeLock = item.writeLock;

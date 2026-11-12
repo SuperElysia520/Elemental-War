@@ -88,6 +88,39 @@ test("publish metadata lists the seven Dashboard parameters", () => {
 
 const personal = () => ({ displayName: "旅行者", gender: 2, signature: "今天也要赢！" });
 
+test("new display names use Han=2 and ASCII letters/digits=1 with a maximum of 12", async t => {
+  for (const displayName of ["名字测试一二", "Abc123Xyz789", "名字测试一AB", "旅行者123456", "𠮷𠮷𠮷𠮷𠮷𠮷", "A", "名"]) {
+    await t.test("accept " + displayName, async () => {
+      const h = harness();
+      const result = await h.run({ operation: "personal", revision: 0, personal: { ...personal(), displayName } });
+      assert.equal(result.ok, true);
+      assert.equal(result.profile.personal.displayName, displayName);
+    });
+  }
+  for (const displayName of ["名字测试一二三", "Abc123Xyz7890", "名字测试一ABC", "名字测试一二A", "a b", "name_1", "🙂", "\uD840"]) {
+    await t.test("reject " + displayName, async () => {
+      const h = harness();
+      const result = await h.run({ operation: "personal", revision: 0, personal: { ...personal(), displayName } });
+      assert.equal(result.code, "invalid_profile");
+      assert.equal(h.calls.writes.length, 0);
+    });
+  }
+});
+
+test("legacy long names survive signature/gender edits but a rename must follow the new limit", async () => {
+  const h = harness();
+  const legacy = { ...personal(), displayName: "LegacyLongName123" };
+  h.state.set("project-1/player-1/fps_personal_v1", { key: "fps_personal_v1", value: { revision: 1, personal: legacy }, writeLock: "old-personal-lock" });
+  const kept = await h.run({ operation: "personal", revision: 1, personal: { ...legacy, signature: "新签名", gender: 1 } });
+  assert.equal(kept.ok, true);
+  assert.equal(kept.profile.personal.displayName, legacy.displayName);
+  assert.equal((await h.run({ operation: "personal", revision: 2, personal: { ...legacy, displayName: "OtherLongName123" } })).code, "invalid_profile");
+  assert.equal((await h.run({ operation: "personal", revision: 2, personal: { ...legacy, displayName: "" } })).code, "invalid_profile");
+  const renamed = await h.run({ operation: "personal", revision: 2, personal: { ...legacy, displayName: "名字测试一AB" } });
+  assert.equal(renamed.ok, true);
+  assert.equal(renamed.profile.personalRevision, 3);
+});
+
 test("personal details use a separate protected key and leave identity, character and revision unchanged", async () => {
   const h = harness(); h.seed();
   const initial = clone(h.state.get("project-1/player-1"));

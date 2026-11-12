@@ -38,7 +38,7 @@ public static class ProfilePanelSetup
             view.closeNameButton = At<UnityEngine.UI.Button>(t, "InformationPanel/ReviseNamePanel/Close");
             view.nameEditor = t.Find("InformationPanel/ReviseNamePanel").gameObject;
             view.nameInput = At<UnityEngine.UI.InputField>(t, "InformationPanel/ReviseNamePanel/Panel/newName");
-            view.nameInput.characterLimit = 20; view.nameInput.lineType = UnityEngine.UI.InputField.LineType.SingleLine;
+            view.nameInput.characterLimit = DisplayNameRules.MaxLength; view.nameInput.lineType = UnityEngine.UI.InputField.LineType.SingleLine;
             view.signatureInput = At<TMP_InputField>(t, "FirstPagePanel/UP/Signature");
             view.signatureInput.characterLimit = 80; view.signatureInput.lineType = TMP_InputField.LineType.SingleLine;
             view.signatureInput.richText = false;

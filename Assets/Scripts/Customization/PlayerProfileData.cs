@@ -94,6 +94,8 @@ public sealed class PersonalProfileData
 
     public static bool IsValid(PersonalProfileData value)
     {
+        // Read legacy cloud names without locking out existing accounts. New names
+        // are checked by DisplayNameRules at the save boundary.
         if (value == null || value.gender > 2 || value.displayName == null || value.signature == null ||
             value.displayName.Length > 20 || value.signature.Length > 80 || value.displayName != value.displayName.Trim()) return false;
         foreach (char c in value.displayName) if (char.IsControl(c) || c == '<' || c == '>') return false;

@@ -84,3 +84,5 @@ ReviseAvatarPanel 保留 30 个头像与原 6 列 GridLayoutGroup，AvatarOption
 成员槽改读 profile.DisplayName。UGS bridge 从本人 Protected fps_personal_v1 合并游戏名称到成员资料及专服入场回包；DisplayName 不再借用认证 Username。名称更新使用独立 personalRevision，角色 revision 不变时刷新显示资料且保留队员准备状态。权威专服入场和准备刷新同样使用显示名称，登录身份、队伍成员索引和匹配名单继续使用 accountId。
 
 首次未设置名称的 UGS 账号在 Login 的 InitialNamePanel 完成云端保存后进入大厅，已有名称直接跳过。上线需重新构建并更新客户端、bridge 和战斗专服；继续使用上一版 FpsProfile 的 personal 接口，不新增云端参数。
+
+2026-11-12 名称规则：首次命名与 ProfilePanel 改名均使用 DisplayNameRules；汉字计2，ASCII 英文字母/数字计1，总计1–12，最多6个汉字或12个字母/数字。两处均使用旧版 InputField，原始字符上限12；提交时还须检查加权长度，不能只用 characterLimit。AccountClient.SavePersonalProfile 与 FpsProfile.js 对新名称再次校验。已有旧名称仍可读取，保持旧名称时可以修改性别/签名，不自动截断云存档；改名需遵守新规则。云端 FpsProfile 需要重新发布源码，参数表保持不变。
