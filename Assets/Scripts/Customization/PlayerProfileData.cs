@@ -70,12 +70,55 @@ public struct PvpLoadoutData : INetworkSerializable, IEquatable<PvpLoadoutData>
 public class PlayerProfileData
 {
     public string accountId;
+    // Public display identity is separate from the Authentication / network accountId.
+    public int uid;
     public string username;
     public int revision;
     public byte avatarId;
+    public PersonalProfileData personal;
+    public int personalRevision;
+    public PlayerCareerRecord career;
+    public string DisplayName => personal != null && !string.IsNullOrWhiteSpace(personal.displayName) ? personal.displayName : username;
     public MatchAdmissionData match;
     public CharacterAppearanceData appearance = CharacterAppearanceData.Default;
     public PvpLoadoutData loadout = PvpLoadoutData.Default;
+}
+
+[Serializable]
+public sealed class PersonalProfileData
+{
+    public string displayName = "";
+    // 0 = unspecified, 1 = male, 2 = female. Existing profiles remain unspecified.
+    public byte gender;
+    public string signature = "";
+
+    public static bool IsValid(PersonalProfileData value)
+    {
+        if (value == null || value.gender > 2 || value.displayName == null || value.signature == null ||
+            value.displayName.Length > 20 || value.signature.Length > 80 || value.displayName != value.displayName.Trim()) return false;
+        foreach (char c in value.displayName) if (char.IsControl(c) || c == '<' || c == '>') return false;
+        foreach (char c in value.signature) if (char.IsControl(c) || c == '<' || c == '>') return false;
+        return true;
+    }
+}
+
+[Serializable]
+public sealed class PlayerCareerRecord
+{
+    public int matches, wins, kills, deaths, headshotKills;
+    public bool IsValid => matches >= 0 && wins >= 0 && wins <= matches && kills >= 0 && deaths >= 0 && headshotKills >= 0 && headshotKills <= kills;
+}
+
+
+public static class AccountUid
+{
+    public const int First = 111100001;
+    public const int Last = 999999999;
+    // Preserve accounts registered before this feature. Keep this cutover fixed in later builds.
+    public static readonly DateTime EnabledAtUtc = new DateTime(2026, 11, 10, 1, 21, 16, DateTimeKind.Utc);
+    public static bool IsLegacyRegistration(DateTime createdAtUtc) => createdAtUtc.ToUniversalTime() < EnabledAtUtc;
+    public static bool IsValid(int value) => value >= First && value <= Last;
+    public static string Format(int value, string legacyId = null) => IsValid(value) ? value.ToString(System.Globalization.CultureInfo.InvariantCulture) : value == 0 ? legacyId ?? "" : "";
 }
 
 [Serializable]

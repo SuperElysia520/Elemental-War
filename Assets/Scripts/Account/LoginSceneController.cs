@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.SceneManagement;
 
-public enum LoginViewState { Login, Registration, Ready, Loading }
+public enum LoginViewState { Login, Registration, Ready, Loading, InitialName }
 
 [Serializable] public sealed class AccountStringEvent : UnityEvent<string> { }
 [Serializable] public sealed class AccountBoolEvent : UnityEvent<bool> { }
@@ -14,7 +14,7 @@ public enum LoginViewState { Login, Registration, Ready, Loading }
 [DisallowMultipleComponent]
 public sealed class LoginSceneController : MonoBehaviour
 {
-    [Tooltip("登录成功自动进入 GameStart；关闭后显示账号信息，等待点击进入游戏。")]
+    [Tooltip("登录成功后自动读取用户数据并进入 GameLobby；关闭后等待点击进入游戏。")]
     public bool enterGameAfterLogin = true;
     [Header("状态通知（显示/动画用；登录、注册等按钮请绑定 Button.onClick）")]
     public UnityEvent onShowLogin = new UnityEvent();
@@ -29,9 +29,11 @@ public sealed class LoginSceneController : MonoBehaviour
     public string Message { get; private set; } = "";
     public string SuggestedUsername { get; private set; } = "";
     public string AccountId => account != null && account.HasSession ? account.AccountId : "";
+    public string Uid => account != null ? account.DisplayUid : "";
     public string Username => account != null && account.HasSession ? account.Username : "";
     public bool IsBusy => processing || (account != null && account.IsBusy);
     public float LoadingProgress { get; private set; }
+    private bool RequiresInitialName => account.UsesUgs && account.IsAuthenticated && string.IsNullOrWhiteSpace(account.Profile.personal?.displayName);
     public event Action Changed;
     public event Action<float> LoadingProgressChanged;
     private AccountClient account;
@@ -143,18 +145,75 @@ public sealed class LoginSceneController : MonoBehaviour
     {
         if (IsBusy || notifyingView || !IsLoginScene()) return;
         if (!account.HasSession) { SetView(LoginViewState.Login, "请先登录账号。"); return; }
+        if (ViewState == LoginViewState.InitialName && RequiresInitialName) return;
         if (!GameFlowScenes.TryValidateSceneAvailable(GameFlowScenes.MainMenu, out string error))
         { SetView(LoginViewState.Ready, error); return; }
-        LoginSceneBootstrap.PrepareLobbyEntry();
         processing = true;
         SetLoadingProgress(0f);
-        SetView(LoginViewState.Loading, "正在进入游戏…");
+        SetView(LoginViewState.Loading, "正在读取用户数据…");
         StartCoroutine(LoadGameScene());
     }
 
     private IEnumerator LoadGameScene()
     {
-        // Give LoadingPanel a frame to render before starting scene loading.
+        // Keep both cloud loading and scene loading inside the authored Login panel.
+        yield return null;
+        bool profileCompleted = false, profileSucceeded = false;
+        string profileError = "";
+        account.RefreshProfile((ok, error) =>
+        {
+            if (this == null) return;
+            profileSucceeded = ok;
+            profileError = error;
+            profileCompleted = true;
+        });
+        while (!profileCompleted) yield return null;
+        if (!profileSucceeded || !account.IsAuthenticated)
+        {
+            processing = false;
+            SetLoadingProgress(0f);
+            SetView(account.HasSession ? LoginViewState.Ready : LoginViewState.Login,
+                string.IsNullOrEmpty(profileError) ? "用户数据读取失败，请重新登录后重试。" : "用户数据读取失败：" + profileError);
+            yield break;
+        }
+
+        if (RequiresInitialName)
+        {
+            processing = false;
+            SetView(LoginViewState.InitialName, "请设置你的游戏名称（1–20字）。");
+            yield break;
+        }
+        yield return LoadLobbyScene();
+    }
+
+    public void ConfirmInitialName(string name)
+    {
+        if (IsBusy || notifyingView || !IsLoginScene() || ViewState != LoginViewState.InitialName) return;
+        if (!account.IsAuthenticated) { SetView(LoginViewState.Login, "登录已失效，请重新登录。"); return; }
+        name = (name ?? "").Trim();
+        var value = new PersonalProfileData
+        { displayName = name, gender = account.Profile.personal?.gender ?? 0, signature = account.Profile.personal?.signature ?? "" };
+        if (string.IsNullOrWhiteSpace(name) || !PersonalProfileData.IsValid(value))
+        { SetView(LoginViewState.InitialName, "请输入1–20字的名称，请勿使用控制字符或尖括号。"); return; }
+        processing = true;
+        SetView(LoginViewState.InitialName, "正在保存名称…");
+        account.SavePersonalProfile(value, (ok, error) =>
+        {
+            if (this == null) return;
+            if (!ok || RequiresInitialName || !account.IsAuthenticated)
+            {
+                processing = false;
+                SetView(account.HasSession ? LoginViewState.InitialName : LoginViewState.Login,
+                    string.IsNullOrEmpty(error) ? "名称未能保存，请重试。" : error);
+                return;
+            }
+            StartCoroutine(LoadLobbyScene());
+        });
+    }
+
+    private IEnumerator LoadLobbyScene()
+    {
+        SetView(LoginViewState.Loading, "用户数据读取完成，正在加载大厅…");
         yield return null;
         try
         {
@@ -178,6 +237,7 @@ public sealed class LoginSceneController : MonoBehaviour
         }
 
         SetLoadingProgress(1f);
+        SetView(LoginViewState.Loading, "加载完成，正在进入大厅…");
         // Render 100% before activating GameLobby and destroying the Login scene.
         yield return null;
         sceneLoadOperation.allowSceneActivation = true;

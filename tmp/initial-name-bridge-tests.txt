@@ -1,0 +1,4 @@
+PASS two real parties match, roster tickets redeem once
+PASS forged, malformed, replaced and expired tickets reject
+PASS saved revision change cancels matched admission
+PASS custom-room ticket loads latest profile without admission

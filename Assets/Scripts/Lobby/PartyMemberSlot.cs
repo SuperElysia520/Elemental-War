@@ -17,7 +17,7 @@ public sealed class PartyMemberSlot : MonoBehaviour
         if (occupiedRoot != null) occupiedRoot.SetActive(occupied);
         if (emptyRoot != null) emptyRoot.SetActive(!occupied);
         if (appearance != null) appearance.gameObject.SetActive(occupied);
-        if (playerName != null) playerName.text = occupied ? member.profile.username : "";
+        if (playerName != null) playerName.text = occupied ? member.profile.DisplayName : "";
         bool owner = occupied && member.profile.accountId == ownerId;
         if (ownerBadge != null) ownerBadge.SetActive(owner);
         if (readyState != null)

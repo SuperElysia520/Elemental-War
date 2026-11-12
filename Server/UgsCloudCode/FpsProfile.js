@@ -3,6 +3,7 @@
 const { DataApi } = require("@unity-services/cloud-save-1.4");
 
 const PROFILE_KEY = "fps_profile_v1";
+const PERSONAL_KEY = "fps_personal_v1";
 const MAX_REVISION = 2147483647;
 const USERNAME = /^[A-Za-z0-9.@_-]{3,20}$/;
 const MESSAGES = {
@@ -50,6 +51,13 @@ function validLoadout(value) {
 }
 function copy(value) { return JSON.parse(JSON.stringify(value)); }
 
+function validPersonal(value) {
+  return fields(value, ["displayName", "gender", "signature"]) && integer(value.gender, 2) &&
+    typeof value.displayName === "string" && value.displayName.length <= 20 && value.displayName === value.displayName.trim() &&
+    typeof value.signature === "string" && value.signature.length <= 80 &&
+    !/[\x00-\x1f\x7f-\x9f<>]/.test(value.displayName + value.signature);
+}
+
 function defaultProfile(playerId, username) {
   // A restored session may not have a cached account name. This is only a
   // display-name fallback; the authenticated playerId is always the identity.
@@ -77,10 +85,11 @@ function validStoredProfile(value, playerId) {
 }
 
 function validateRequest(params) {
-  if (!object(params) || !["load", "save", "avatar"].includes(params.operation)) fail("invalid_request");
+  if (!object(params) || !["load", "save", "avatar", "personal"].includes(params.operation)) fail("invalid_request");
   const allowed = ["operation", "username"];
   if (params.operation === "save") allowed.push("revision", "appearance", "loadout");
   if (params.operation === "avatar") allowed.push("revision", "avatarId");
+  if (params.operation === "personal") allowed.push("revision", "personal");
   if (Object.keys(params).some(key => !allowed.includes(key))) fail("invalid_request");
   if (params.username !== undefined && typeof params.username !== "string") fail("invalid_request");
   if (params.operation !== "load" && !integer(params.revision, MAX_REVISION)) fail("invalid_request");
@@ -88,6 +97,7 @@ function validateRequest(params) {
     fail("invalid_profile");
   }
   if (params.operation === "avatar" && !integer(params.avatarId, 31)) fail("invalid_profile");
+  if (params.operation === "personal" && !validPersonal(params.personal)) fail("invalid_profile");
 }
 
 async function readProfile(api, projectId, playerId) {
@@ -119,6 +129,27 @@ module.exports = async ({ params, context, logger }) => {
     const api = new DataApi({ accessToken: context.serviceToken });
     const stored = await readProfile(api, context.projectId, context.playerId);
     const profile = stored ? stored.profile : defaultProfile(context.playerId, params.username);
+    if (params.operation === "personal") {
+      const response = await api.getProtectedItems(context.projectId, context.playerId, [PERSONAL_KEY]);
+      const results = response && response.data && response.data.results;
+      if (!Array.isArray(results) || results.length > 1) fail("service_unavailable");
+      const item = results[0];
+      if (item && (!object(item) || item.key !== PERSONAL_KEY || !fields(item.value, ["revision", "personal"]) ||
+          !integer(item.value.revision, MAX_REVISION) || !validPersonal(item.value.personal))) fail("profile_corrupt");
+      if (item && (typeof item.writeLock !== "string" || !item.writeLock)) fail("service_unavailable");
+      const revision = item ? item.value.revision : 0;
+      if (params.revision !== revision) fail("profile_conflict");
+      if (revision === MAX_REVISION) fail("revision_exhausted");
+      const value = { revision: revision + 1, personal: copy(params.personal) };
+      const body = { key: PERSONAL_KEY, value };
+      if (item) body.writeLock = item.writeLock;
+      const saved = await api.setProtectedItem(context.projectId, context.playerId, body);
+      if (!saved || !saved.data || typeof saved.data.writeLock !== "string" || !saved.data.writeLock) fail("service_unavailable");
+      // Keep the character schema unchanged so existing PvP workers and dedicated servers remain compatible.
+      profile.personal = value.personal;
+      profile.personalRevision = value.revision;
+      return { ok: true, profile };
+    }
     if (params.operation === "load") return { ok: true, profile };
     if (params.revision !== profile.revision) fail("profile_conflict");
     if (profile.revision === MAX_REVISION) fail("revision_exhausted");
@@ -159,5 +190,6 @@ module.exports.params = {
   revision: { type: "Numeric", required: false },
   appearance: { type: "JSON", required: false },
   loadout: { type: "JSON", required: false },
-  avatarId: { type: "Numeric", required: false }
+  avatarId: { type: "Numeric", required: false },
+  personal: { type: "JSON", required: false }
 };

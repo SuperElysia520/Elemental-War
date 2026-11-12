@@ -1,0 +1,88 @@
+PASS REST sends only to fixed official HTTPS hosts
+PASS Token exchange v2 scopes project and environment UUIDs
+PASS Service credentials use UTF8 Basic only on token exchange
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Mailbox uses Private Custom endpoint
+PASS 201 Token Exchange is accepted and the subsequent Private GET retains its opaque write lock
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Real writeLock is top-level in Cloud Save mutation body
+PASS Mutation verifies returned write lock
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Real writeLock is top-level in Cloud Save mutation body
+PASS CAS conflict is safe and is never retried without a lock
+PASS Service token is cached and conflicts perform exactly one attempted mutation
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS REST sends only to fixed official HTTPS hosts
+PASS Token exchange v2 scopes project and environment UUIDs
+PASS Service credentials use UTF8 Basic only on token exchange
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Mailbox uses Private Custom endpoint
+PASS 401 refreshes service token once and repeats the authorized GET
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Mailbox uses Private Custom endpoint
+PASS Pagination uses the last returned key, never a supplied URL
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Mailbox uses Private Custom endpoint
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Profiles read only the Protected bucket and exact profile key
+PASS Protected response is cloned before HTTP JSON is disposed
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Personal names read only the Protected player bucket
+PASS Personal-name REST response survives disposal and keeps the existing login profile separate
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Career reads use the Protected player bucket
+PASS Career REST read preserves cloud totals and real write lock
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Real writeLock is top-level in Cloud Save mutation body
+PASS Career REST mutation confirms its write lock exactly once
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Delete is conditional on the actual fetched write lock
+PASS REST sends only to fixed official HTTPS hosts
+PASS Cloud Save receives bearer rather than service-account Basic credentials
+PASS Missing Cloud Save writeLock is rejected instead of becoming an unconditional update
+PASS The cloud operation deadline fires before the test watchdog
+PASS Body timeout exception does not expose fake service credentials
+PASS Token response body is cancelled after headers by the real store deadline
+PASS Timed-out response stream is disposed
+PASS Timed-out operation does not silently retry or issue further cloud requests
+PASS A new request recovers after token-body timeout and releases the token gate
+PASS Recovery exchanges only the needed token and performs one new Private GET
+PASS The cloud operation deadline fires before the test watchdog
+PASS Body timeout exception does not expose fake service credentials
+PASS Cloud Save response body is cancelled after headers by the real store deadline
+PASS Timed-out response stream is disposed
+PASS Timed-out operation does not silently retry or issue further cloud requests
+PASS A new request recovers after Cloud Save body timeout
+PASS Recovery exchanges only the needed token and performs one new Private GET
+PASS Real local HTTP reservation path returns the actual matched slot
+PASS Real local HTTP event path accepts a matching server event
+PASS Real local ticket redemption returns trusted UGS identity and roster
+PASS Real HTTP ticket replay is 401
+PASS Real HTTP forged ticket is 401
+PASS Real HTTP rejects forged identity parameters
+PASS Each UGS server route rejects remote peers despite forged forwarded-loopback header
+PASS Each UGS server route rejects remote peers despite forged forwarded-loopback header
+PASS Each UGS server route rejects remote peers despite forged forwarded-loopback header
+PASS Each UGS server route rejects remote peers despite forged forwarded-loopback header
+PASS SelfHosted health keeps its original three-field 200 response without resolving an unregistered worker
+PASS An uninitialized UGS worker reports real HTTP 503 without health initiating cloud IO
+PASS A confirmed lease reports real HTTP 200 and health reads only the worker snapshot
+PASS Lease expiry changes real health to 503 without revoking the owner's ability to renew
+PASS The same expired worker renews successfully and real health recovers to 200
+PASS An initial TLS reset does not prevent the actual Host and Kestrel from serving 503 health
+PASS A startup retry waiting for its cloud response never reports a speculative healthy lease
+PASS The same hosted worker retries after five seconds and changes real HTTP health to 200 only after a confirmed lease write
+PASS Stopping the actual hosted worker immediately invalidates readiness
+UGS HTTP/REST boundary: PASS; 87 assertions. Cloud transport faked; local HTTP is real.

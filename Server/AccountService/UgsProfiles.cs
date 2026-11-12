@@ -17,7 +17,26 @@ public sealed class UgsProfiles(IUgsCloudStore cloud)
         if (!IsPlayerId(playerId) || !IsUsername(username)) throw new ApiException(400, "invalid_profile", "玩家资料参数无效。");
         JsonElement? data = await cloud.GetProtectedProfileAsync(playerId, cancel);
         Profile value;
-        try { value = data == null ? new(playerId, username, 0, new Appearance(), new Loadout()) : Parse(data.Value, playerId); }
+        try
+        {
+            value = data == null ? new(playerId, username, 0, new Appearance(), new Loadout()) : Parse(data.Value, playerId);
+            if (cloud is IUgsPersonalCloudStore personalCloud)
+            {
+                var personal = await personalCloud.GetProtectedPersonalAsync(playerId, cancel);
+                if (personal != null)
+                {
+                    RequireFields(personal.Value, "revision", "personal");
+                    if (!Integer(personal.Value.GetProperty("revision"), int.MaxValue)) throw new JsonException("Invalid personal revision.");
+                    var details = personal.Value.GetProperty("personal");
+                    RequireFields(details, "displayName", "gender", "signature");
+                    if (details.GetProperty("displayName").ValueKind != JsonValueKind.String || details.GetProperty("signature").ValueKind != JsonValueKind.String ||
+                        !Integer(details.GetProperty("gender"), 2)) throw new JsonException("Invalid personal details.");
+                    var parsed = details.Deserialize<PersonalProfile>(Json);
+                    if (parsed == null || !parsed.IsValid) throw new JsonException("Invalid personal details.");
+                    value = value with { Personal = parsed, PersonalRevision = personal.Value.GetProperty("revision").GetInt32() };
+                }
+            }
+        }
         catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException or ApiException)
         {
             lock (gate) invalid.Add(playerId);

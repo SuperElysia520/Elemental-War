@@ -1,0 +1,23 @@
+{
+    "success": true,
+    "server": false,
+    "development": false,
+    "output": "E:\\Unity资产\\FPS\\Builds\\UgsPvp\\InitialName-20261112\\Client\\FPS.exe",
+    "unityVersion": "2022.3.62f3c1",
+    "duration": "00:00:22.4370783",
+    "result": "Succeeded",
+    "scenes": [
+        "Assets/Scenes/Login.unity",
+        "Assets/Scenes/GameLobby.unity",
+        "Assets/Scenes/GamePVP.unity"
+    ],
+    "warnings": [
+        "Assets\\Scripts\\Base\\UIBase.cs(12,28): warning CS0114: 'UIBase<T>.Awake()' hides inherited member 'SingleMonoBase<T>.Awake()'. To make the current member override that implementation, add the override keyword. Otherwise add the new keyword.",
+        "Script attached to 'DEF-spine.006' in scene 'Assets/Scenes/GameLobby.unity' is missing or no valid script is attached.",
+        "Shader warning in 'Toon': floating point division by zero at INVALID_UTF8_STRING(273) (on d3d11)\n\nCompiling Subshader: 1, Pass: ForwardLit, Fragment program with _ADDITIONAL_LIGHTS _ADDITIONAL_LIGHT_SHADOWS _EMISSIVE_SIMPLE _IS_ANGELRING_OFF _IS_CLIPPING_OFF _IS_TRANSCLIPPING_OFF\nPlatform defines: SHADER_API_DESKTOP UNITY_ENABLE_DETAIL_NORMALMAP UNITY_ENABLE_REFLECTION_BUFFERS UNITY_LIGHTMAP_FULL_HDR UNITY_LIGHT_PROBE_PROXY_VOLUME UNITY_PBS_USE_BRDF1 UNITY_SPECCUBE_BLENDING UNITY_SPECCUBE_BOX_PROJECTION UNITY_USE_DITHER_MASK_FOR_ALPHABLENDED_SHADOWS\nDisabled keywords: DIRLIGHTMAP_COMBINED FOG_EXP FOG_EXP2 FOG_LINEAR LIGHTMAP_ON SHADER_API_GLES30 UNITY_ASTC_NORMALMAP_ENCODING UNITY_COLORSPACE_GAMMA UNITY_FRAMEBUFFER_FETCH_AVAILABLE UNITY_HALF_PRECISION_FRAGMENT_SHADER_REGISTERS UNITY_HARDWARE_TIER1 UNITY_HARDWARE_TIER2 UNITY_HARDWARE_TIER3 UNITY_LIGHTMAP_DLDR_ENCODING UNITY_LIGHTMAP_RGBM_ENCODING UNITY_METAL_SHADOWS_USE_POINT_FILTERING UNITY_NO_DXT5nm UNITY_NO_FULL_STANDARD_SHADER UNITY_NO_SCREENSPACE_SHADOWS UNITY_PBS_USE_BRDF2 UNITY_PBS_USE_BRDF3 UNITY_PRETRANSFORM_TO_DISPLAY_ORIENTATION UNITY_UNIFIED_SHADER_PRECISION_MODEL UNITY_VIRTUAL_TEXTURING UTS_USE_RAYTRACING_SHADOW _ADDITIONAL_LIGHTS_VERTEX _EMISSIVE_ANIMATION _IS_ANGELRING_ON _IS_CLIPPING_MODE _IS_CLIPPING_TRANSMODE _IS_TRANSCLIPPING_ON _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MIXED_LIGHTING_SUBTRACTIVE _SHADINGGRADEMAP _SHADOWS_SOFT"
+    ],
+    "errors": [
+        "ArgumentNullException: Value cannot be null.\r\nParameter name: typeSet"
+    ],
+    "bytes": 1363958485
+}

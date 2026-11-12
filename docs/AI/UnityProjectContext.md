@@ -2,6 +2,48 @@
 
 <!-- unity-onboarding:generated:start -->
 
+## 2026-11-12 首次游戏名称与组队名称同步
+
+- 用户新增的 InitialNamePanel.prefab 已接入 Login。读取云端档案后，UGS 账号 personal.displayName 为空才进入 InitialName 状态；1–20字名称保存到既有 fps_personal_v1 成功后才加载 GameLobby。失败保留输入、提示重试，请求中禁用重复提交。已有云端名称的账号重复登录/换设备不再提示；登录用户名和 UID 不变。SelfHosted 流程保持原有行为。
+- 新 InitialNamePanelView 只显示状态和发送确认意图；LoginSceneController 控制读取、命名、保存与场景加载；LoginUI 绑定现有面板。InitialNameSetup 已将用户 Prefab 放到 Login 现有 Canvas 并添加一行状态提示；原图像、输入框与按钮布局保留。备份位于 tmp/InitialName20261112。
+- PartyMemberSlot 与旧 MultiplayerLobbyUI 使用 PlayerProfileData.DisplayName。bridge 的 UgsCloudStore / UgsProfiles 新增读取受保护 fps_personal_v1，服务端 Profile 携带独立 Personal / PersonalRevision；原 fps_profile_v1 格式和 Username 认证校验不变。纯名称/性别/签名刷新不会取消队员准备或队列；角色 revision 变化仍按原规则取消准备。
+- 权威专服入场与准备刷新使用云端名称更新 m_ClientNames / LobbyState.PlayerName，随后对局角色和计分板沿用该显示名。入场身份和匹配名单仍使用 accountId。
+- 100项真实场景离线 UI 检查通过，包括初次弹出、非法输入、实际鼠标射线命中、保存中禁止重复提交、失败重试、已有名称跳过及组队名称显示。bridge 25场景189断言、HTTP/REST87断言通过。证据 tmp/InitialName20261112；未部署线上或重新构建分发包。
+- 编辑器原有未保存 GameLobby 已备份并保持未保存状态；只保存 Login 新接线。LobbyMvcValidation 改用 playModeStartScene 启动测试，退出后恢复原启动设置并核对原场景与 dirty 状态，避免为了验证而保存/丢弃用户编辑。运行前后三项资产哈希不变，已有两条 Visual Scripting 初始化异常单列 baseline。
+
+
+## 2026-11-10 ProfilePanel 重设计接线与专服云端生涯
+
+- ProfilePanel 使用用户重做的 FirstPagePanel / InformationPanel，HomePanel 头像每次进入都重置到首页并将首页按钮染黄；页签互斥显示，当前按钮持续黄色。沿用现有 MVC，View 不调用账号或网络单例。
+- 首页接入显示昵称、性别图标、80字内联签名编辑，以及原六张战况卡（总场次、胜场、击杀、死亡、爆头率、K/D）。信息页沿用改名弹窗、男/女 Toggle 和头像选择；昵称最长20字，与登录用户名、UID 分开。保存只接受云端确认，失败保留输入，Escape 优先关闭改名/头像子面板。
+- 新个人资料使用 Protected fps_personal_v1（独立 revision + personal），生涯使用 Protected fps_career_v1；原 fps_profile_v1 的身份和角色存档格式保留，旧账号未设置资料时回退原名字且不初始化云端数据。重新打开个人主页显式读取云端档案、个人资料与生涯，便于跨设备更新及冲突后重读；场景重入本身仍不重复读档。
+- ReviseAvatarPanel 使用独立 Viewport + RectMask2D，原6列30项 Grid Content 使用 ContentSizeFitter 扩高，ScrollRect 仅垂直、Clamped，原滚动条改为可见并绑定。ProfilePanelSetup 编辑器工具先备份，再只接线用户 Prefab；未重新创建原面板或恢复旧布局。备份在 tmp/ProfilePanel20261110。
+- 用户明确选择专服写入并跨设备保存生涯，未使用本机累计。专服在击杀和生成时采集权威计数，保留断线成员记录；已完成匹配/自定义 PvP 结算写入按端口隔离的 CareerOutbox，向既有回环 HTTP 服务提交。新增 UgsCareerStore + UgsCareerUploader 持久化回执、排序上传 Protected 统计、使用真实写锁和每玩家 lastSequence 去重，覆盖重启、部分写入及响应丢失。
+- 部署必须保留专服 CareerOutbox 和 bridge AccountStorePath 同目录的 career-results 状态，不能在升级时重置结算序号。需要发布新版 FpsProfile（新增可选JSON参数personal），更新雨云 bridge 与战斗专服并使用新版客户端。历史无统计的对局不能补算；本轮未修改线上账号或部署服务，真实双客户端与跨设备验收仍需上线后执行。详见 UgsPvpRainyunSetup.md 的专服生涯战绩同步节。
+- 验证证据放在 tmp/ProfilePanel20261110：90项 Unity 运行交互验证、98项 Cloud Code 检查、19项云端生涯断言、83项真实回环/假云端 HTTP 检查、24场景176项 bridge 断言。运行错误中的两条已知 Visual Scripting 初始化异常单列 baseline，场景恢复停止的 GameLobby。
+
+
+## 2026-11-10 新注册账号数字 UID
+
+- 用户确认采用九位数字，从 111100001 开始递增；随后明确取消两个现有账号的补号，旧账号保留原 UID 和角色数据。不要再索取它们的账号信息、迁移或自动补号。
+- AccountUid 固定启用时刻为 2026-11-10 01:21:16 UTC（北京时间 09:21:16）。UgsAccountGateway 核对 Authentication SDK PlayerInfo.CreatedAt；启用前的账号标记 HasLegacyUid，不调用 UID 分配脚本，DisplayUid 显示原 Player ID。新的注册和之后登录使用独立的数字 UID。启用时刻不可随以后的构建更新。
+- FpsAccountUid.js 使用认证上下文身份、Protected fps_uid_v1 和 Private Custom Item fps_account_uid_v1 / sequence。计数器 CAS 与 pending 可恢复中断分配，重复请求不会重复占号。原 fps_profile_v1 格式、Authentication Player ID、队伍与专服身份协议不变。
+- 客户端在注册确认前分配 UID，普通新账号登录可恢复中断请求；外观/配装/头像载入和保存将同一数字合并进本地 PlayerProfileData.uid。界面统一显示数字；旧账号 uid=0 只在明确的 HasLegacyUid 会话下允许，并保留原显示。
+- 用户选择自行操作 Unity Dashboard。云端尚未发布，也没有改写两个真实账号；只需在 development 的 Game Data Private 首次建立 sequence={version:1,nextUid:111100001,pending:null}，再发布 FpsAccountUid（必填 String 参数 operation）。不创建两个旧账号的 UID 键，不要求雨云更新。具体步骤见 docs/AI/AccountNumericUid.md。
+- 初版旧账号迁移工具及其测试已经按用户取消范围删除；tmp/UgsIntegration/Uid20261110 里的旧迁移测试资料仅为假 HTTP 的历史证据，不代表真实云端修改。
+- 验证：Unity Editor 编译通过，71 项离线 UI 检查、296 项云脚本测试通过，账号离线回归完成 103 项功能断言，包含旧账号不补号与新账号数字 UID。账号报告仍仅因两条已有 Visual Scripting 初始化异常标记失败；编辑器已恢复停止状态的 Login。证据见 tmp/UgsIntegration/Uid20261110。验证工具现等待 Application 与 Editor 都退出运行后恢复场景，并将可选进度文件的读取竞争隔离，避免清理阶段卡住。
+
+
+## 2026-11-10 Login 合并用户数据读取
+
+- 初始读档统一由 `LoginSceneController` 在 Login 的现有 LoadingPanel 内调用 `AccountClient.RefreshProfile`。成功后才创建 GameLobby 的异步场景加载任务；网络失败留在 Login 的 Ready 面板并保留会话，失效会话回到登录表单。读档及场景加载都受同一 processing 锁保护。
+- `LoginUI.loadingStatusText` 已绑定用户新增的 TMP Status；读取、加载大厅、进入大厅分别显示状态。现有 Progress 也是 TMP，已接入 `loadingProgressTmpText`；保留旧 Text 可选字段。读档期间保持 0%，之后显示真实 `AsyncOperation.progress`，100% 显示一帧后激活场景。
+- GameLobby 的 LoadingOverlay 实例及 `LobbyUIRoot.loading` 字段已移除，旧 Prefab 资产保留。`LoginSceneBootstrap` / `GameStartProfileLoader` 继续提供现有就绪接口，但正常大厅启动只复用已读档案；缺档案返回 Login，比赛返回大厅也不重复读档。显式旧接口 `LoadUserData()` 仍可刷新。
+- `LoginSceneSetup.IntegrateProfileLoading` 已完成场景引用迁移，先备份开放场景（含未保存编辑）再保存，未更改用户现有布局或 LoadingPanel Prefab。备份、加载截图和验证报告在 `tmp/LoginFlow/IntegratedLoading20261110`。
+- Unity Editor 编译通过；71 项真实 Login/GameLobby 离线 UI 验证通过，含延迟读档、失败重试、失效会话、禁止重复提交、三个 Status 阶段、TMP 百分比、大厅无重复读档与场景重入。运行报告将原有两条 Visual Scripting 初始化异常单列为 baselineErrors，无新增运行错误。场景和两个加载 Prefab 的验证前后 SHA256 一致。未请求线上 UGS、未重新构建客户端或专服。
+- 账号离线回归的 94 项功能断言完成，证据 `tmp/LoginFlow/IntegratedLoading20261110/ugs-regression.json`；该旧报告仍因同样两条 Visual Scripting 异常标记 success=false。修正旧验证用例在会话过期已触发返回时再次加载 Login 的时序错误，改为等待现有跳转，避免销毁重新进入所用的控制器。验证恢复到原先已保存、停止运行的 Login。
+- 用户已在迁移后继续调整首页布局；常规运行验证使用当前 Prefab 接线和交互，历史布局快照只由专门的迁移 Audit 比对，不能为通过旧快照而恢复用户布局。详细流程见 `docs/AI/LoginSceneFlow.md` 和 `docs/AI/LobbyMvcUI.md`。
+
 ## 2026-10-30 大厅 UI MVC 迁移
 
 - 核查范围为登录入口、大厅 UI、Prefab 和场景构建引用；基于提交 `c85800a` 及用户尚未提交的场景/素材修改。以下现状优先于本文较早的流程记录。

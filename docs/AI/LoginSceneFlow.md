@@ -8,12 +8,12 @@
 
 1. 客户端从 `Login` 启动。UGS 不提供未登录的用户名存在性查询：已有账号直接验证用户名和密码，新用户主动打开注册面板；登录失败不推断未注册、不自动创建账号。SelfHosted 模式仍先向旧后端检查注册状态。
 2. 注册必须输入一致的确认密码；成功后回到登录面板，不自动进入游戏或载入角色档案。UGS 注册 API 自动建立的临时会话会立即退出并清除缓存。
-3. 登录成功后按控制器的 `Enter Game After Login` 设置进入 `GameStart`。当前用户场景此项为关闭，先展示账号名、UID，点击“进入游戏”后继续；勾选后可自动进入。
-4. `GameStartProfileLoader` 在到达 `GameStart` 后请求最新档案。主菜单等待请求成功后显示；`AccountCharacterPreview`、头像、外观、武器配装继续使用 `AccountClient.Profile` / `ProfileChanged`。
-5. 档案请求失败返回 Login 并显示原因。网络或配置失败保留会话，可再次进入；服务端 401 清空会话与旧档案，要求重新登录。
+3. 登录成功后按控制器的 `Enter Game After Login` 设置自动进入，或先展示账号名、UID，等待点击“进入游戏”。
+4. 2026-11-10：`LoginSceneController` 在 Login 已有的 LoadingPanel 中先请求最新档案，Status 显示“正在读取用户数据…”。读取成功后才开始异步加载 GameLobby，Status 依次显示“用户数据读取完成，正在加载大厅…”和“加载完成，正在进入大厅…”。主菜单、头像、外观、配装直接使用已就绪的 `AccountClient.Profile` / `ProfileChanged`，大厅不再展示 LoadingOverlay 或重复读档。
+5. 档案请求失败始终留在当前 Login 并显示原因，不加载 GameLobby。网络或配置失败保留会话，可再次点击进入重试；服务端 401 清空会话与旧档案，回到登录表单。
 6. 返回 Login 时，本次运行的有效会话可显示账号名/UID并直接点击进入游戏；切换账号吊销令牌并清空旧档案，再显示登录面板。
 
-专用服务器仍从 GameStart 启动，不经过客户端登录流程。客户端构建包含 Login 在首位，服务端场景列表不包含 Login。GamePVE 的现有 GUID 指向开发者移动后的 `Assets/Scenes/Test/GamePVE.unity`。
+专用服务器从 GameLobby 启动，不经过客户端登录和读档流程。客户端构建包含 Login 在首位，服务端场景列表不包含 Login。GamePVE 的现有 GUID 指向开发者移动后的 `Assets/Scenes/Test/GamePVE.unity`。
 
 ## Login 场景中绑定 UI
 
@@ -28,7 +28,9 @@
 | Ready Panel | 已登录账号展示/进入游戏区域 |
 | Loading Panel | 忙碌/加载提示根对象，当前绑定现有 LoadingPanel |
 | Loading Progress Image | `LoadingPanel/ProgressBar/FillImage` 的 Image，水平从左填充 |
-| Loading Progress Text | `LoadingPanel/Progress` 的旧版 uGUI Text，显示 `0%`–`100%` |
+| Loading Progress Tmp Text | 当前 `LoadingPanel/Progress` 的 TMP Text，显示 `0%`–`100%` |
+| Loading Progress Text | 可选的旧版 uGUI Text 兼容字段 |
+| Loading Status Text | `LoadingPanel/Status` 的 TMP Text，显示当前读取/加载阶段 |
 | Login Username / Login Password | 登录的旧版 uGUI `InputField` 输入框 |
 | Registration Username / Registration Password / Confirm Password | 注册的三个旧版 uGUI `InputField` 输入框 |
 | Username Text / Uid Text | 账号名与 UID 的旧版 uGUI `Text` 文字 |
@@ -49,13 +51,13 @@
 
 密码输入框自动使用密码显示模式，提交及表单切换时清空密码。账号名在未注册跳转和注册成功后自动带入对应表单。
 
-2026-10-29：登录后点击“进入游戏”（或启用自动进入）时，显示现有 LoadingPanel 并从 0% 开始异步加载 GameStart。控制器读取 `AsyncOperation.progress`，将激活前的 0–0.9 映射为 0–100%；LoginUI 同步更新 Image 的 `fillAmount` 和百分比文字。场景就绪后先显示一帧 100%，再允许激活。进度不受 `Time.timeScale` 影响，加载期间阻止重复进入和切换账号；回到 Login 后重新从 0% 开始。此进度只表示场景加载，云端账号档案仍由到达 GameStart 后的 `GameStartProfileLoader` 读取。
+登录后点击“进入游戏”（或启用自动进入）时，先显示现有 LoadingPanel，读档期间进度保持 0%，由 Status 显示当前阶段。读档成功后才异步加载 GameLobby，控制器读取 `AsyncOperation.progress`，将激活前的 0–0.9 映射为 0–100%；LoginUI 同步更新 Image 的 `fillAmount` 和百分比文字。场景就绪后先显示一帧 100%，再允许激活。进度不受 `Time.timeScale` 影响，读档及场景加载期间都阻止重复进入和切换账号；回到 Login 后重新从 0% 开始。百分比表示真实场景加载进度，云端读档没有可用的字节百分比。
 
-现有场景已接好这两个引用。重新接线可使用 `Tools > FPS > Login > Bind Loading Progress`；工具备份当前 Login 后仅绑定已有控件并初始化 0%，不创建 UI 或调整布局。
+现有场景已接好状态、进度 Image 和 TMP 百分比引用。重新接线可使用 `Tools > FPS > Login > Bind Loading Progress`；工具备份当前 Login 后仅绑定已有控件并初始化 0%，不创建 UI 或调整布局。一次迁移工具 `Integrate Profile Loading` 会备份 Login/GameLobby、接线并移除大厅旧 LoadingOverlay 实例。
 
 `Ready Panel` 仅在存在有效会话时显示。公共背景图、版权文字、音乐等放在这些切换面板之外。主提示文字需要放在始终可见的对象上，或在 `Additional Message Texts` 为各个面板提供文字。切换账号按钮可放在 Ready Panel 中。
 
-UID 使用后端稳定的 `accountId`；UGS 模式使用 Unity Authentication 的 Player ID，不假设其格式或长度，也不使用截图中的数字 1。界面不需要本机注册标记。
+2026-11-10：新注册账号的显示 UID 改为独立九位数字，从 111100001 开始；已有两个账号按用户要求保留原 UID，不补号。内部 accountId / Authentication Player ID 继续用于身份、存档和联机。新旧账号识别与 Dashboard 两步配置见 [数字 UID 说明](AccountNumericUid.md)。
 
 ## 自定义 UI 的接口
 
@@ -67,7 +69,7 @@ UID 使用后端稳定的 `accountId`；UGS 模式使用 Unity Authentication �
 
 `On Show Login/Registration/Ready` 只用于状态切换时显示面板或播放动画；使用 `LoginUI` 自动控制面板时可以全部留空。登录、注册、进入游戏、切换账号等操作应绑定按钮的 `Button.onClick`。控制器现在会阻止通知回调重入这些操作，并且同一面板内的提示更新不会重复触发显示事件。
 
-GameStart 会自动创建数据加载组件。若要在 Inspector 绑定 `On User Data Loaded(PlayerProfileData)`、`On Message Changed(string)`、`On Loading Changed(bool)`，可在 GameStart 手工添加一个独立的 `GameStartProfileLoader` 对象，自动入口会复用它。该对象必须始终启用，且不能挂在启动时隐藏的 MainMenu 面板内。`LoadUserData()` 重新读取档案；`ReturnToLogin()` 返回登录界面。
+GameLobby 会自动创建兼容旧引用的 `GameStartProfileLoader` 就绪适配器，启动时只复用 Login 已读取的档案；若直接进入大厅但没有档案，则返回 Login。它不再承担正式流程的初始读档；`LoadUserData()` 为旧调用方保留显式刷新，`ReturnToLogin()` 返回登录界面。从对局返回大厅也复用已认证的档案和网络成员关系。
 
 账号客户端保留原有 `Login/Register` 接口；正式 Login 控制器使用 `RegisterAccount`、`LoginSession`，仅 SelfHosted 会调用 `CheckRegistration`。UGS 的 `Register` 与 `RegisterAccount` 均只注册并退出，不加载档案。`HasSession` 表示有效身份会话；`IsAuthenticated` 表示有效会话且档案已经载入，其他系统使用后者避免提前访问空档案。
 
@@ -107,3 +109,11 @@ UGS 模式中密码不由游戏保存；SDK 管理会话缓存，注册完成、
 Unity 运行时检查入口：`Tools > FPS > Login > Validate Runtime Flow (Local Service 5097)`。先在本机回环 5097 启动更新后的 Development 账号服务并指定独立测试数据库，再保存并打开 Login。验证进入真实 GameStart、未注册/重名/错误密码、会话复用、不同账号档案隔离、加载失败重试和 401；完成后退出 Play Mode，恢复账号地址环境变量和 HTTP 设置，结果写入 `tmp/LoginFlow/runtime-validation.json`。
 
 重新接入场景的工具为 `Tools > FPS > Login > Bind Scene And Configure Startup`。修改前保存当前 Login 的完整副本到 `tmp/LoginFlow/login-before-时间.unity`，保留开发者正在编辑的场景内容，再仅添加功能对象并配置构建入口。
+
+## 2026-11-12 首次设置游戏名称
+
+UGS 玩家在 Login 的 LoadingPanel 读取档案后，如果 personal.displayName 尚未设置，先展示用户制作的 InitialNamePanel。确认按钮与输入框回车均调用 LoginSceneController.ConfirmInitialName；名称为1–20字，保存使用已有 AccountClient.SavePersonalProfile / FpsProfile personal 操作，保留性别和签名。只有云端成功确认才继续加载大厅；失败时面板保留输入并显示原因，保存中禁用重复确认。已设置名称的账号直接继续原加载流程，登录用户名和 UID 不变。旧 SelfHosted 账号不进入这个 UGS 命名步骤。
+
+面板已作为 Prefab 实例绑定到 LoginUI.initialNamePanel。Tools/FPS/Login/Bind Initial Name Panel 可重新接线；先备份开放场景和原 Prefab，再只保存 Login。正常调整 UI 仍编辑原 Prefab，不需要手工添加 Button OnClick；InitialNamePanelView 在 Awake 注册并在销毁时清理监听。
+
+本地真实场景验证100项通过，包含实际指针射线和确认按钮、保存失败重试、重复登录跳过。验证采用假 UGS 边界，无线上写入；证据位于 tmp/InitialName20261112。

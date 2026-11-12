@@ -206,7 +206,7 @@ public sealed class CharacterCustomizationUI : MonoBehaviour
     private void RefreshStatus()
     {
         if (accountLabel == null) return;
-        accountLabel.text = account.IsAuthenticated ? "已登录：" + account.Profile.username + "\nUID: " + account.Profile.accountId : "请返回 Login 界面登录账号。";
+        accountLabel.text = account.IsAuthenticated ? "已登录：" + account.Profile.DisplayName + "\nUID: " + AccountUid.Format(account.Profile.uid, account.Profile.accountId) : "请返回 Login 界面登录账号。";
         bool cloudAllowed = CanModifyCloudProfile(out string lockMessage);
         if (!cloudAllowed) status.text = lockMessage;
         else if (!string.IsNullOrEmpty(account.LastError)) status.text = account.LastError;

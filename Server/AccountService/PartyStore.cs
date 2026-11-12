@@ -285,7 +285,12 @@ public sealed class PartyStore
                     try { saved = readProfile(member.Profile.AccountId); }
                     catch (ApiException) when (skipUnavailable)
                     { ResetReady(party); party.QueuedAt = null; continue; }
-                    if (saved.Revision == member.Profile.Revision) continue;
+                    if (saved.Revision == member.Profile.Revision)
+                    {
+                        // Cosmetic identity changes do not revoke already confirmed loadouts or matching readiness.
+                        member.Profile = member.Profile with { Personal = saved.Personal, PersonalRevision = saved.PersonalRevision };
+                        continue;
+                    }
                     member.Profile = saved; ResetReady(party); party.QueuedAt = null;
                 }
     }

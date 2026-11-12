@@ -14,10 +14,19 @@ public sealed record Loadout(byte PrimaryWeaponId = 0, byte PrimarySightId = 0, 
     [JsonIgnore] public bool IsValid => PrimaryWeaponId is 0 or 2 && PrimarySightId <= 5 && SidearmSightId is 0 or 3;
 }
 
+public sealed record PersonalProfile(string DisplayName, byte Gender, string Signature)
+{
+    [JsonIgnore] public bool IsValid => DisplayName != null && Signature != null && DisplayName.Length <= 20 && DisplayName == DisplayName.Trim() &&
+        Signature.Length <= 80 && Gender <= 2 && !(DisplayName + Signature).Any(c => char.IsControl(c) || c is '<' or '>');
+}
+
 public sealed record Profile(string AccountId, string Username, int Revision, Appearance Appearance, Loadout Loadout)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public MatchAdmission? Match { get; init; }
     public byte AvatarId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public PersonalProfile? Personal { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public int PersonalRevision { get; init; }
+    [JsonIgnore] public string DisplayName => !string.IsNullOrWhiteSpace(Personal?.DisplayName) ? Personal.DisplayName : Username;
 }
 public sealed record SaveAvatarRequest(byte AvatarId);
 public sealed record Credentials(string? Username, string? Password);

@@ -275,7 +275,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
     private void RefreshPresentation()
     {
         if (account == null) return;
-        string playerName = account.IsAuthenticated ? account.Profile.username : "未登录";
+        string playerName = account.IsAuthenticated ? account.Profile.DisplayName : "未登录";
         if (tmpPlayerName != null) tmpPlayerName.text = playerName;
         LobbyManager lobby = LobbyManager.Instance;
         bool partyBusy = boundParty != null && boundParty.IsBusy;

@@ -49,6 +49,7 @@ public sealed partial class AccountClient
         {
             if (ugs == null || !ugs.IsSignedIn || ugs.PlayerId != result.accountId || string.IsNullOrEmpty(result.accountId))
                 throw new UgsAccountException("登录会话已失效，请重新登录。", true);
+            if (!AccountUid.IsValid(ugs.PublicUid) && !(ugs.HasLegacyUid && ugs.PublicUid == 0)) throw new UgsAccountException("数字 UID 未就绪，请重新登录。");
             if (applyProfile) ValidateUgsProfile(result.profile, result.accountId);
             AccountId = result.accountId;
             Username = result.username;
@@ -83,6 +84,19 @@ public sealed partial class AccountClient
         string id = AccountId;
         int revision = Profile.revision;
         ExecuteUgs(async () => new UgsResult { profile = await GetUgsGateway().SaveAvatarAsync(Username, revision, avatarId) },
+            result => ApplyUgsProfile(result.profile, id), completed);
+    }
+
+    public void SavePersonalProfile(PersonalProfileData personal, Action<bool, string> completed = null)
+    {
+        if (!IsAuthenticated) { RejectMissingSession(completed); return; }
+        if (!PersonalProfileData.IsValid(personal)) { completed?.Invoke(false, "名字最多20字，签名最多80字，请勿输入控制字符或尖括号。"); return; }
+        if (!UsesUgs || !(GetUgsGateway() is IUgsPersonalProfileGateway gateway))
+        { completed?.Invoke(false, "当前账号服务尚未支持修改个人资料。"); return; }
+        string id = AccountId;
+        int revision = Profile.personalRevision;
+        var snapshot = new PersonalProfileData { displayName = personal.displayName, gender = personal.gender, signature = personal.signature };
+        ExecuteUgs(async () => new UgsResult { profile = await gateway.SavePersonalProfileAsync(Username, revision, snapshot) },
             result => ApplyUgsProfile(result.profile, id), completed);
     }
 
@@ -132,10 +146,11 @@ public sealed partial class AccountClient
         ProfileChanged?.Invoke(Profile);
     }
 
-    private static void ValidateUgsProfile(PlayerProfileData profile, string expectedAccount)
+    private void ValidateUgsProfile(PlayerProfileData profile, string expectedAccount)
     {
-        if (profile == null || profile.accountId != expectedAccount || profile.revision < 0 ||
+        if (profile == null || profile.accountId != expectedAccount || profile.uid != PublicUid || (!AccountUid.IsValid(profile.uid) && !(ugs.HasLegacyUid && profile.uid == 0)) || profile.revision < 0 ||
             !UgsCredentialRules.IsValidUsername(profile.username) || profile.avatarId >= 32 ||
+            (profile.personal != null && !PersonalProfileData.IsValid(profile.personal)) ||
             !profile.appearance.Equals(profile.appearance.Sanitized()) || !profile.loadout.Equals(profile.loadout.Sanitized()) || profile.match != null)
             throw new UgsAccountException("云存档与当前账号不一致或格式异常，未应用数据。");
     }

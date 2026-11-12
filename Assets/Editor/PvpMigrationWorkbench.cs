@@ -51,6 +51,11 @@ public static class PvpMigrationWorkbench
             switch (request.operation)
             {
                 case "status": break;
+                case "build-initial-name-client": Invoke("InitialNameReleaseBuild", "BuildClient"); break;
+                case "build-initial-name-server": Invoke("InitialNameReleaseBuild", "BuildServer"); break;
+                case "setup-initial-name": Invoke("InitialNameSetup", "Apply"); break;
+                case "setup-profile-panel": Invoke("ProfilePanelSetup", "Apply"); break;
+                case "exit-play-mode": EditorApplication.ExitPlaymode(); break;
                 case "inspect-open-scene": InspectOpenScenes(result); break;
                 case "audit-lobby-layout": Invoke("LobbyLayoutAudit", "Run"); break;
                 case "audit-lobby-mvc": Invoke("LobbyMvcAudit", "Baseline"); break;
@@ -58,6 +63,7 @@ public static class PvpMigrationWorkbench
                 case "audit-lobby-mvc-assets": Invoke("LobbyMvcValidation", "Audit"); break;
                 case "validate-lobby-mvc": Invoke("LobbyMvcValidation", "Run"); break;
                 case "finalize-lobby-mvc": Invoke("LobbyMvcSceneSetup", "FinalizeBindings"); break;
+                case "cancel-lobby-mvc-validation": Invoke("LobbyMvcValidation", "Cancel"); break;
                 case "fix-lobby-mvc-typography": Invoke("LobbyMvcTypography", "Apply"); break;
                 case "bind-party-lobby": Invoke("LobbyRedesignSetup", "BindExisting"); break;
                 case "audit-party-lobby": Invoke("LobbyRedesignSetup", "Audit"); break;
@@ -102,6 +108,7 @@ public static class PvpMigrationWorkbench
                 case "validate-main-menu-runtime": Invoke("MainMenuFlowValidation", "Run"); break;
                 case "setup-login-scene": Invoke("LoginSceneSetup", "Apply"); break;
                 case "bind-login-loading": Invoke("LoginSceneSetup", "BindLoadingProgress"); break;
+                case "bind-login-profile-loading": Invoke("LoginSceneSetup", "IntegrateProfileLoading"); break;
                 case "open-backend-setup": Invoke("HostedBackendSetupWindow", "Open"); break;
                 case "install-ugs-packages": Invoke("UgsPackageInstaller", "Install"); break;
                 case "open-ugs-setup": Invoke("UgsBackendSetupWindow", "Open"); break;

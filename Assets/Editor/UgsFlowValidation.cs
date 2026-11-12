@@ -121,7 +121,7 @@ public static class UgsFlowValidation
     private static void Tick()
     {
         if (!Running) return;
-        if (!EditorApplication.isPlayingOrWillChangePlaymode && !EditorApplication.isCompiling && Stage == "stopping")
+        if (!EditorApplication.isPlayingOrWillChangePlaymode && !Application.isPlaying && !EditorApplication.isCompiling && Stage == "stopping")
         { Restore(); return; }
         if (long.TryParse(SessionState.GetString(Prefix + "start", "0"), out long start) &&
             DateTime.UtcNow.Ticks - start > TimeSpan.FromSeconds(90).Ticks)
@@ -158,6 +158,10 @@ public static class UgsFlowValidation
     private static IEnumerator Probe()
     {
         yield return null;
+        Check(AccountUid.IsLegacyRegistration(AccountUid.EnabledAtUtc.AddTicks(-1)) && !AccountUid.IsLegacyRegistration(AccountUid.EnabledAtUtc),
+            "启用时刻之前的账号保持原状，之后的账号使用数字 UID");
+        Check(AccountUid.Format(0, "original-id") == "original-id" && AccountUid.Format(AccountUid.First, "original-id") == "111100001",
+            "旧账号原 UID 与新账号九位 UID 格式兼容");
         account = AccountClient.EnsureInstance();
         var flow = UnityEngine.Object.FindObjectOfType<LoginSceneController>();
         Check(flow != null && account.UsesUgs && !account.SupportsRegistrationLookup && !account.HasSession && account.Profile == null,
@@ -165,6 +169,7 @@ public static class UgsFlowValidation
         var ui = flow.GetComponent<LoginUI>();
         var progressImage = ui.loadingProgressImage;
         var progressText = ui.loadingProgressText;
+        var progressTmpText = ui.loadingProgressTmpText;
         Check(ui != null && progressImage != null &&
             progressImage.type == UnityEngine.UI.Image.Type.Filled && progressImage.fillMethod == UnityEngine.UI.Image.FillMethod.Horizontal &&
             progressImage.fillOrigin == (int)UnityEngine.UI.Image.OriginHorizontal.Left,
@@ -281,13 +286,16 @@ public static class UgsFlowValidation
         while (flow.IsBusy) yield return null;
         string firstId = account.AccountId;
         Check(flow.ViewState == LoginViewState.Ready && account.HasSession && !account.IsAuthenticated && account.Profile == null && gateway.LoadCalls == 0,
-            "LoginSession 只建立身份会话，进入 GameLobby 前不读档");
+            "LoginSession 只建立身份会话，点击进入游戏后才在 Login 读档");
+        int firstUid = account.PublicUid;
+        Check(firstUid == AccountUid.First && flow.Uid == "111100001" && ui.uidText.text == "UID: 111100001" && account.AccountId != flow.Uid,
+            "登录立即显示九位数字 UID，内部认证 Player ID 保持独立");
         bool callback = false, success = false;
         account.SaveProfile(CharacterAppearanceData.Default, PvpLoadoutData.Default, (ok, error) => { callback = true; success = ok; });
         Check(callback && !success && gateway.SaveCalls == 0, "未载入档案前不能提交角色保存");
 
-        bool prematureProfile = false;
-        Action<PlayerProfileData> observe = p => { if (p != null && SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) prematureProfile = true; };
+        bool profileLoadedInLogin = false;
+        Action<PlayerProfileData> observe = p => { if (p != null && SceneManager.GetActiveScene().name == GameFlowScenes.Login) profileLoadedInLogin = true; };
         account.ProfileChanged += observe;
         var loadGate = gateway.HoldLoad();
         float lastProgress = 0f;
@@ -298,7 +306,8 @@ public static class UgsFlowValidation
             progressUpdates++;
             validProgress &= value >= lastProgress && value >= 0f && value <= 1f;
             progressUiMatches &= ui.loadingPanel.activeInHierarchy && Mathf.Approximately(progressImage.fillAmount, value) &&
-                (progressText == null || progressText.text == Mathf.FloorToInt(value * 100f) + "%");
+                (progressText == null || progressText.text == Mathf.FloorToInt(value * 100f) + "%") &&
+                (progressTmpText == null || progressTmpText.text == Mathf.FloorToInt(value * 100f) + "%");
             lastProgress = value;
             if (value == 1f) completedBeforeActivation = SceneManager.GetActiveScene().name == GameFlowScenes.Login && flow.IsBusy;
         };
@@ -316,6 +325,11 @@ public static class UgsFlowValidation
             flow.ShowLogin();
             Check(flow.IsBusy && flow.ViewState == LoginViewState.Loading && account.HasSession,
                 "加载期间重复进入、切换账号及返回表单不会打断加载");
+            while (gateway.LoadCalls == 0) yield return null;
+            Check(SceneManager.GetActiveScene().name == GameFlowScenes.Login && account.Profile == null && account.IsBusy &&
+                ui.loadingStatusText != null && ui.loadingStatusText.text == "正在读取用户数据…",
+                "云档案返回前停留在 Login LoadingPanel，Status 显示读取状态");
+            loadGate.SetResult(store.Load(firstId));
             while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
         }
         finally
@@ -327,13 +341,9 @@ public static class UgsFlowValidation
             "真实异步场景加载进度单调到达 100%，Image 和百分比文字同步更新");
         Check(completedBeforeActivation, "暂停时间仍可异步加载，Login 显示 100% 后才激活 GameLobby");
         GameStartProfileLoader loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
-        while (gateway.LoadCalls == 0) yield return null;
-        Check(loader != null && !loader.IsReady && account.Profile == null && account.IsBusy,
-            "真实 GameLobby 在云档案返回前保持未就绪");
-        loadGate.SetResult(store.Load(firstId));
         while (!loader.IsReady) yield return null;
-        Check(account.IsAuthenticated && account.Profile.accountId == firstId && !prematureProfile && gateway.LastLoadScene == GameFlowScenes.MainMenu,
-            "只有到达 GameLobby 后才读取并应用当前玩家档案");
+        Check(account.IsAuthenticated && account.Profile.accountId == firstId && profileLoadedInLogin && gateway.LastLoadScene == GameFlowScenes.Login && gateway.LoadCalls == 1,
+            "Login 读取并应用当前玩家档案后才进入 GameLobby，大厅不重复读档");
         account.ProfileChanged -= observe;
         Check(store.SavedProfiles == 0, "首次默认档案读取不写入存储");
 
@@ -458,7 +468,9 @@ public static class UgsFlowValidation
         bad = Clone(good); bad.appearance.faceId = 255; badProfiles.Add(bad);
         bad = Clone(good); bad.loadout.primaryWeaponId = 1; badProfiles.Add(bad);
         bad = Clone(good); bad.match = new MatchAdmissionData { matchId = "legacy-ticket-data" }; badProfiles.Add(bad);
-        string[] corruptions = { "空响应", "其他账号 ID", "负版本号", "非法用户名", "非法头像", "非法外观", "非法配装", "旧专服票据数据" };
+        bad = Clone(good); bad.uid = 0; badProfiles.Add(bad);
+        bad = Clone(good); bad.uid = AccountUid.Last; badProfiles.Add(bad);
+        string[] corruptions = { "空响应", "其他账号 ID", "负版本号", "非法用户名", "非法头像", "非法外观", "非法配装", "旧专服票据数据", "缺失数字 UID", "其他账号数字 UID" };
         for (int i = 0; i < badProfiles.Count; i++)
         {
             gateway.OverrideNextLoad = true;
@@ -470,7 +482,8 @@ public static class UgsFlowValidation
                 "云档案包含" + corruptions[i] + "时拒绝应用并保留原档案");
         }
 
-        loader.ReturnToLogin();
+        // Session expiry above already requests Login through LobbyController.
+        // Await that transition instead of queuing a second Login load.
         while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
         yield return null;
         flow = UnityEngine.Object.FindObjectOfType<LoginSceneController>();
@@ -485,12 +498,20 @@ public static class UgsFlowValidation
         int loads = gateway.LoadCalls;
         flow.Login(FirstUser, TestPassword);
         while (flow.IsBusy) yield return null;
-        Check(account.HasSession && account.Profile == null && gateway.LoadCalls == loads, "重登仍然延迟到 GameLobby 读取档案");
+        Check(account.HasSession && account.Profile == null && gateway.LoadCalls == loads, "重登等待点击进入游戏后在 Login 读取档案");
         flow.EnterGame();
-        while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
+        double reentryDeadline = EditorApplication.timeSinceStartup + 10;
+        while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu)
+        {
+            if (flow == null) throw new InvalidOperationException("Reentry Login controller was replaced before GameLobby activation.");
+            if (!flow.IsBusy || EditorApplication.timeSinceStartup > reentryDeadline)
+                throw new InvalidOperationException("Reentry stopped in Login: " + flow.ViewState + "; " + flow.Message + "; profileLoads=" + gateway.LoadCalls);
+            yield return null;
+        }
         loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         while (!loader.IsReady) yield return null;
         Check(SameProfile(account.Profile, good), "重登后加载之前保存的外观、装备、头像和版本");
+        Check(account.PublicUid == firstUid && account.Profile.uid == firstUid, "重新登录和读档不会改变已经分配的数字 UID");
         loader.ReturnToLogin();
         while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
         yield return null;
@@ -510,8 +531,10 @@ public static class UgsFlowValidation
         loader = LoginSceneBootstrap.FindLoader(SceneManager.GetActiveScene());
         while (!loader.IsReady) yield return null;
         string secondId = account.AccountId;
+        Check(account.PublicUid == AccountUid.First + 2 && account.Profile.uid == account.PublicUid,
+            "注册时分配连续数字 UID，未登录过的中间账号也占用自己的号码");
         Check(correctLoginOrder && secondId != firstId && account.Profile.appearance.faceId == 0 && account.Profile.avatarId == 0 && account.Profile.revision == 0,
-            "另一账号自动进入 GameLobby 后只加载自己的默认档案");
+            "另一账号在 Login 加载自己的默认档案后自动进入 GameLobby");
         callback = success = false;
         account.SaveAvatar(9, (ok, error) => { callback = true; success = ok; });
         while (!callback) yield return null;
@@ -658,6 +681,26 @@ public static class UgsFlowValidation
         Check(lateCallbacks == 0 && destroyedGateway.DisposeCalls == 1 && !account.HasSession && !account.IsBusy,
             "GameLobby 等待期间客户端被销毁会返回 Login，不永久卡住或应用旧响应");
         yield return ValidatePartyCreationUi();
+        LoginSceneBootstrap.ReturnToLogin();
+        while (SceneManager.GetActiveScene().name != GameFlowScenes.Login) yield return null;
+        yield return null;
+        flow = UnityEngine.Object.FindObjectOfType<LoginSceneController>();
+        flow.SwitchAccount();
+        while (flow.IsBusy) yield return null;
+        var legacy = store.Register("legacy_uid", TestPassword); legacy.uid = 0;
+        flow.enterGameAfterLogin = false;
+        flow.Login("legacy_uid", TestPassword);
+        while (flow.IsBusy) yield return null;
+        Check(account.HasSession && gateway.HasLegacyUid && account.PublicUid == 0 && flow.Uid == account.AccountId,
+            "既有账号保持原 UID，登录时不要求补号");
+        flow.EnterGame();
+        while (SceneManager.GetActiveScene().name != GameFlowScenes.MainMenu) yield return null;
+        var legacyRoot = UnityEngine.Object.FindObjectOfType<LobbyUIRoot>();
+        while (legacyRoot.Controller == null) yield return null;
+        legacyRoot.Controller.Execute(LobbyAction.Multiplayer);
+        string legacyLabel = legacyRoot.identity.uid != null ? legacyRoot.identity.uid.text : legacyRoot.identity.legacyUid.text;
+        Check(account.IsAuthenticated && account.Profile.uid == 0 && legacyLabel == "UID: " + account.AccountId,
+            "既有账号正常进入大厅，保留原显示身份与角色档案");
     }
 
     private static IEnumerator ValidatePartyCreationUi()
@@ -804,8 +847,8 @@ public static class UgsFlowValidation
         finally
         {
             Read().success = Read().errors.Count == 0;
-            Store();
-            EditorApplication.isPlaying = false;
+            try { Store(); }
+            finally { EditorApplication.delayCall += EditorApplication.ExitPlaymode; }
         }
     }
     private static void CleanupRuntime()
@@ -899,11 +942,19 @@ public static class UgsFlowValidation
     }
     private static void AddError(string error) { Read().errors.Add(error); Store(); }
     private static Report Read() => report ?? (report = JsonUtility.FromJson<Report>(SessionState.GetString(Prefix + "report", "{}")));
-    private static void Store() => SessionState.SetString(Prefix + "report", JsonUtility.ToJson(Read()));
+    private static void Store()
+    {
+        string json = JsonUtility.ToJson(Read());
+        SessionState.SetString(Prefix + "report", json);
+        Directory.CreateDirectory(Path.GetDirectoryName(Output));
+        // Progress is optional; a simultaneous reader must not prevent Play Mode cleanup.
+        try { File.WriteAllText(Path.Combine(Path.GetDirectoryName(Output), "runtime-progress.json"), json); }
+        catch (IOException) { }
+    }
 
     private sealed class FakeStore
     {
-        internal sealed class Player { public string id, username, password; public PlayerProfileData profile; }
+        internal sealed class Player { public string id, username, password; public int uid; public PlayerProfileData profile; }
         private readonly Dictionary<string, Player> users = new Dictionary<string, Player>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Player> ids = new Dictionary<string, Player>();
         public TaskCompletionSource<bool> NextRegistrationGate;
@@ -911,7 +962,7 @@ public static class UgsFlowValidation
         public Player Register(string username, string password)
         {
             if (users.ContainsKey(username)) throw new UgsAccountException("该用户名已被使用，请换一个用户名，或返回登录。");
-            var player = new Player { id = "offline-player-" + (users.Count + 1), username = username, password = password };
+            var player = new Player { id = "offline-player-" + (users.Count + 1), uid = AccountUid.First + users.Count, username = username, password = password };
             users.Add(username, player);
             ids.Add(player.id, player);
             return player;
@@ -925,7 +976,7 @@ public static class UgsFlowValidation
         public PlayerProfileData Load(string id)
         {
             Player player = ids[id];
-            return Clone(player.profile) ?? new PlayerProfileData { accountId = id, username = player.username };
+            return Clone(player.profile) ?? new PlayerProfileData { accountId = id, uid = player.uid, username = player.username, personal = new PersonalProfileData { displayName = "已有名称" } };
         }
         public PlayerProfileData Save(string id, int revision, CharacterAppearanceData? appearance, PvpLoadoutData? loadout, byte? avatar)
         {
@@ -962,6 +1013,8 @@ public static class UgsFlowValidation
         public bool IsSignedIn { get; private set; }
         public string PlayerId => IsSignedIn ? playerId : "";
         public string AccessToken => IsSignedIn ? "offline-validation-token" : "";
+        public int PublicUid => IsSignedIn ? data.Load(playerId).uid : 0;
+        public bool HasLegacyUid => IsSignedIn && PublicUid == 0;
         public event Action SessionExpired;
         public FakeGateway(FakeStore data) { this.data = data; }
         public Task InitializeAsync() => Task.CompletedTask;

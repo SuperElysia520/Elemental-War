@@ -290,6 +290,11 @@ public static class UgsPvpEndpoints
         });
         local.MapPost("/game-ticket/redeem", async (RedeemTicketRequest body, UgsTicketStore tickets, HttpContext context) =>
             await tickets.RedeemAsync(body.Ticket, context.RequestAborted));
+        local.MapPost("/career/result", async (CareerMatchResult body, HttpContext context) =>
+        {
+            await context.RequestServices.GetRequiredService<UgsCareerStore>().AcceptAsync(body, context.RequestAborted);
+            return Results.NoContent();
+        });
         local.MapGet("/matches/server/{port:int}", (int port, PartyStore parties) => parties.Reservation(port));
         local.MapPost("/matches/server", (MatchServerEvent body, PartyStore parties) =>
         { parties.ServerEvent(body); return Results.NoContent(); });

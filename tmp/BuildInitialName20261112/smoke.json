@@ -1,0 +1,18 @@
+{
+  "scope": "Local Windows launch and UDP discovery only; no online login or real UGS requests.",
+  "bridge": true,
+  "server": true,
+  "client": true,
+  "checks": [
+    "Published self-contained bridge starts and serves its own isolated health endpoint.",
+    "Published dedicated server starts its GameLobby and answers real loopback UDP discovery using protocol 5.",
+    "Published client remains running after engine startup in a hidden batch process; no sign-in was attempted."
+  ],
+  "errors": [],
+  "discovery": {
+    "gamePort": 17777,
+    "accountProtocolVersion": 5,
+    "canCreate": true,
+    "hasRoom": false
+  }
+}

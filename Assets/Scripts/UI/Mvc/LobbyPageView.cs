@@ -60,8 +60,8 @@ namespace FPS.UI
         }
         public virtual void Render(PlayerProfileData profile, PlayerAvatarCatalog catalog, string message, bool busy)
         {
-            if (playerName != null) playerName.text = profile != null ? profile.username : "";
-            if (uid != null) uid.text = profile != null ? "UID: " + profile.accountId : "";
+            if (playerName != null) playerName.text = profile != null ? profile.DisplayName : "";
+            if (uid != null) uid.text = profile != null ? "UID: " + AccountUid.Format(profile.uid, profile.accountId) : "";
             if (status != null) { status.text = message; status.gameObject.SetActive(!string.IsNullOrEmpty(message)); }
             if (avatar != null) avatar.Show(profile != null ? profile.avatarId : (byte)255, catalog);
             SetInputEnabled(!busy);

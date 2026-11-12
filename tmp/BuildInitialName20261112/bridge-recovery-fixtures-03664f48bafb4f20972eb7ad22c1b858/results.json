@@ -1,0 +1,147 @@
+﻿[
+    {
+        "Name":  "success backs up only programs and preserves existing file ACLs and runtime",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "idle DLL-only update preserves PDB and still drains lease",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "tampered hash is rejected before stopping task",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "unknown manifest file is rejected",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "duplicate manifest file is rejected",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "extra manifest properties are rejected",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "wrong runtime is rejected before stopping task",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "foreign listener is rejected before stopping any task",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "task working directory must match App exactly",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "missing root bridge task is rejected",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "unknown AccountService process path is rejected safely",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "orphan App process without listener is rejected before stop",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "stop command failure does not write or restart",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "stop verification refuses StuckTask",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "stop verification refuses StuckProcess",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "stop verification refuses StuckPort",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "stop verification refuses ReusedPid",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "task auto restart before lease drain prevents writing",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "start failure is static and keeps backups",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept OldHealth",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept NotReady",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept Expired",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept Disabled",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept StringReady",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept StringLease",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept InfiniteLease",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "local health must not accept Throws",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "overlapping directories are rejected",
+        "Success":  true,
+        "Error":  ""
+    },
+    {
+        "Name":  "relative App directory is rejected",
+        "Success":  true,
+        "Error":  ""
+    }
+]

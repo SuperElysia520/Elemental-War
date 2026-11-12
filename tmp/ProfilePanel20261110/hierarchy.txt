@@ -1,0 +1,109 @@
+ProfilePanel/FirstPagePanel/Down/DataPanel/Victory matches
+ProfilePanel/InformationPanel/ReviseNamePanel/Close
+ProfilePanel/InformationPanel/Sex/girl/Background/Checkmark
+ProfilePanel/FirstPagePanel/Down/DataPanel/Kill count/number
+ProfilePanel/FirstPagePanel/Down/DataPanel/Kill count
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar13
+ProfilePanel/SideBar/FirstPage/Text (TMP)
+ProfilePanel/FirstPagePanel/Down/DataPanel
+ProfilePanel/InformationPanel/Sex/girl
+ProfilePanel/InformationPanel/ReviseNamePanel/Close/Label
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel/newName/Text (Legacy)
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar17
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar18
+ProfilePanel/FirstPagePanel/Down/Title/-----
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar11
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel/Confirm/Text (Legacy)
+ProfilePanel/FirstPagePanel/UP
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel/Title
+ProfilePanel/FirstPagePanel/Down/DataPanel/KD
+ProfilePanel/Title
+ProfilePanel/FirstPagePanel/UP/avatar
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar7
+ProfilePanel/InformationPanel/Sex/boy/Background/Checkmark
+ProfilePanel/SideBar
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar10
+ProfilePanel/InformationPanel/ReviseAvatarPanel/Title
+ProfilePanel/InformationPanel/Name/title
+ProfilePanel/FirstPagePanel/Down
+ProfilePanel/InformationPanel/Sex/girl/Background
+ProfilePanel/InformationPanel/Avatar/title
+ProfilePanel/InformationPanel/ReviseNamePanel
+ProfilePanel/FirstPagePanel/Down/DataPanel/Kill count/title
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar0
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel/newName
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content
+ProfilePanel/InformationPanel/Sex/boy/Background
+ProfilePanel/SideBar/Information/Text (TMP)
+ProfilePanel/InformationPanel/ReviseAvatarPanel
+ProfilePanel/FirstPagePanel/Down/DataPanel/Headshot Rate/title
+ProfilePanel/FirstPagePanel/UP/name
+ProfilePanel/InformationPanel/Sex
+ProfilePanel/FirstPagePanel/Down/DataPanel/Session/title
+ProfilePanel/FirstPagePanel/UP/Signature/Text Area/Text
+ProfilePanel/FirstPagePanel/Down/DataPanel/Victory matches/title
+ProfilePanel/FirstPagePanel/Down/Title
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar21
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar25
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar16
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar22
+ProfilePanel/FirstPagePanel
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar23
+ProfilePanel/InformationPanel
+ProfilePanel/FirstPagePanel/Down/DataPanel/Session (4)
+ProfilePanel/FirstPagePanel/Down/DataPanel/Session/number
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar19
+ProfilePanel/FirstPagePanel/UP/SexIcon
+ProfilePanel/FirstPagePanel/Down/DataPanel/Session (4)/number
+ProfilePanel/FirstPagePanel/------
+ProfilePanel/InformationPanel/Name/ReviseName/Text (Legacy)
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar20
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar8
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar29
+ProfilePanel/FirstPagePanel/Down/DataPanel/Session (4)/title
+ProfilePanel/FirstPagePanel/UP/Signature/Text Area
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel/Confirm
+ProfilePanel/FirstPagePanel/UP/SignatureIcon
+ProfilePanel/FirstPagePanel/Down/DataPanel/Headshot Rate/number
+ProfilePanel/InformationPanel/Avatar/avatar
+ProfilePanel/FirstPagePanel/Down/DataPanel/Session
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar12
+ProfilePanel/SideBar/Return
+ProfilePanel/InformationPanel/ReviseAvatarPanel/Close
+ProfilePanel/FirstPagePanel/Down/DataPanel/KD/number
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar15
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar28
+ProfilePanel/InformationPanel/Sex/girl/Label
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar14
+ProfilePanel/FirstPagePanel/UP/Signature/Text Area/Placeholder
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar3
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar6
+ProfilePanel/InformationPanel/Avatar
+ProfilePanel/InformationPanel/Name
+ProfilePanel/InformationPanel/Sex/title
+ProfilePanel/FirstPagePanel/Down/DataPanel/KD/title
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar4
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Scrollbar/Sliding Area
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar2
+ProfilePanel/InformationPanel/ReviseNamePanel/Panel/newName/Placeholder
+ProfilePanel/SideBar/FirstPage
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar26
+ProfilePanel/InformationPanel/Name/name
+ProfilePanel
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar1
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar24
+ProfilePanel/FirstPagePanel/UP/Signature
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar9
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar27
+ProfilePanel/InformationPanel/ReviseAvatarPanel/Close/Label
+ProfilePanel/InformationPanel/Sex/boy
+ProfilePanel/InformationPanel/Name/ReviseName
+ProfilePanel/InformationPanel/Sex/boy/Label
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Scrollbar/Sliding Area/Handle
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Content/Avatar5
+ProfilePanel/SideBar/Information
+ProfilePanel/InformationPanel/ReviseAvatarPanel/AvatarOptions/Scrollbar
+ProfilePanel/FirstPagePanel/Down/DataPanel/Victory matches/number
+ProfilePanel/FirstPagePanel/Down/DataPanel/Headshot Rate

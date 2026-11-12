@@ -15,6 +15,8 @@ public interface IUgsAccountGateway : IDisposable
 {
     bool IsSignedIn { get; }
     string PlayerId { get; }
+    int PublicUid { get; }
+    bool HasLegacyUid { get; }
     string AccessToken { get; }
     event Action SessionExpired;
     Task InitializeAsync();
@@ -32,9 +34,22 @@ public sealed class UgsAccountException : Exception
     public UgsAccountException(string message, bool sessionInvalid = false) : base(message) => SessionInvalid = sessionInvalid;
 }
 
-public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGateway
+public interface IUgsPersonalProfileGateway
+{
+    Task<PlayerProfileData> SavePersonalProfileAsync(string username, int revision, PersonalProfileData personal);
+}
+
+public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGateway, IUgsPersonalProfileGateway
 {
     public const string ProfileKey = "fps_profile_v1";
+    public const string PersonalKey = "fps_personal_v1";
+    public const string CareerKey = "fps_career_v1";
+    private PlayerCareerRecord career;
+    private PersonalProfileData personalProfile;
+    private int personalRevision;
+    public const string UidScript = "FpsAccountUid";
+    public int PublicUid { get; private set; }
+    public bool HasLegacyUid { get; private set; }
     private static SemaphoreSlim authGate = new SemaphoreSlim(1, 1);
     private static Task initialization;
     private static string initializedEnvironment;
@@ -82,16 +97,34 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
         await InitializeAsync();
         var gate = authGate;
         await gate.WaitAsync();
+        bool accountCreated = false;
         try
         {
             ThrowIfDisposed();
             // Explicit login only: never silently recover a cached player or create an anonymous account.
             AuthenticationService.Instance.SignOut(true);
             owner = this;
+            PublicUid = 0; HasLegacyUid = false;
             authInFlight = true;
-            if (registering) await AuthenticationService.Instance.SignUpWithUsernamePasswordAsync(username, password);
+            if (registering)
+            {
+                await AuthenticationService.Instance.SignUpWithUsernamePasswordAsync(username, password);
+                accountCreated = true;
+            }
             else await AuthenticationService.Instance.SignInWithUsernamePasswordAsync(username, password);
             ThrowIfDisposed();
+            if (!registering)
+            {
+                var info = AuthenticationService.Instance.PlayerInfo;
+                if (info == null || !info.CreatedAt.HasValue) info = await AuthenticationService.Instance.GetPlayerInfoAsync();
+                RequireSession();
+                if (info == null || info.Id != PlayerId || !info.CreatedAt.HasValue)
+                    throw new UgsAccountException("未能读取账号注册时间，请稍后重新登录。");
+                HasLegacyUid = AccountUid.IsLegacyRegistration(info.CreatedAt.Value);
+            }
+            // Existing accounts keep their original display identity without UID writes.
+            // New registrations, and later logins of those accounts, share one immutable allocation.
+            if (!HasLegacyUid) await EnsurePublicUidAsync();
         }
         catch (Exception error)
         {
@@ -108,6 +141,8 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
                     (registering ? "register" : "login") + "; code=" + code + "; category=" + category);
             }
             TrySignOutOwnedSession();
+            if (accountCreated && !(error is OperationCanceledException))
+                throw new UgsAccountException("账号已注册，但数字 UID 暂未就绪，请登录重试。" + FriendlyError(error));
             throw;
         }
         finally
@@ -121,6 +156,8 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
     public void SignOut() => SignOutOwnedSession();
     private void SignOutOwnedSession()
     {
+        PublicUid = 0;
+        HasLegacyUid = false;
         if (owner != this) return;
         try
         {
@@ -136,9 +173,23 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
         string playerId = PlayerId;
         // Read exactly the Protected bucket written by FpsProfile. Missing data is a virtual default,
         // produced by Cloud Code without writing, so a late load cannot overwrite another device's save.
-        var data = await CloudSaveService.Instance.Data.Player.LoadAsync(new HashSet<string> { ProfileKey },
+        var data = await CloudSaveService.Instance.Data.Player.LoadAsync(new HashSet<string> { ProfileKey, PersonalKey, CareerKey },
             new Unity.Services.CloudSave.Models.Data.Player.LoadOptions(new ProtectedReadAccessClassOptions()));
         RequireSamePlayer(playerId);
+        career = data.TryGetValue(CareerKey, out var careerItem) ? ReadCareer(careerItem.Value.GetAs<JObject>()) : new PlayerCareerRecord();
+        personalProfile = null; personalRevision = 0;
+        if (data.TryGetValue(PersonalKey, out var personalItem))
+        {
+            var personalJson = personalItem.Value.GetAs<JObject>();
+            RequireFields(personalJson, new[] { "revision" }, JTokenType.Integer);
+            RequireFields(personalJson, new[] { "personal" }, JTokenType.Object);
+            var details = (JObject)personalJson["personal"];
+            RequireFields(details, new[] { "displayName", "signature" }, JTokenType.String);
+            RequireFields(details, new[] { "gender" }, JTokenType.Integer);
+            personalProfile = details.ToObject<PersonalProfileData>();
+            personalRevision = personalJson["revision"].Value<int>();
+            if (personalRevision < 0 || !PersonalProfileData.IsValid(personalProfile)) throw new UgsAccountException("云端个人资料格式异常。");
+        }
         if (data.TryGetValue(ProfileKey, out var item))
         {
             var json = item.Value.GetAs<JObject>();
@@ -151,7 +202,10 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
             RequireFields((JObject)json["appearance"], new[] { "outfitId", "faceId", "clothColorId", "hairColorId" }, JTokenType.Integer);
             RequireFields((JObject)json["appearance"], new[] { "hat", "accessories" }, JTokenType.Boolean);
             RequireFields((JObject)json["loadout"], new[] { "primaryWeaponId", "primarySightId", "sidearmSightId" }, JTokenType.Integer);
-            return json.ToObject<PlayerProfileData>();
+            var profile = json.ToObject<PlayerProfileData>();
+            profile.uid = PublicUid;
+            profile.personal = personalProfile; profile.personalRevision = personalRevision; profile.career = career;
+            return profile;
         }
         return await CallProfileAsync(new Dictionary<string, object> { { "operation", "load" }, { "username", username } });
     }
@@ -169,6 +223,12 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
             { "operation", "avatar" }, { "username", username }, { "revision", revision }, { "avatarId", avatarId }
         });
 
+    public Task<PlayerProfileData> SavePersonalProfileAsync(string username, int revision, PersonalProfileData personal)
+        => CallProfileAsync(new Dictionary<string, object>
+        {
+            { "operation", "personal" }, { "username", username }, { "revision", revision }, { "personal", personal }
+        });
+
     private async Task<PlayerProfileData> CallProfileAsync(Dictionary<string, object> arguments)
     {
         RequireSession();
@@ -177,7 +237,53 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
         RequireSamePlayer(playerId);
         if (result == null) throw new UgsAccountException("云存档返回为空，请检查 Cloud Code 脚本和发布环境。");
         if (!result.ok) throw new UgsAccountException(ProfileError(result.code), result.code == "authentication_required");
+        if (result.profile != null)
+        {
+            result.profile.uid = PublicUid;
+            if ((string)arguments["operation"] == "personal")
+            { personalProfile = result.profile.personal; personalRevision = result.profile.personalRevision; }
+            result.profile.personal = personalProfile; result.profile.personalRevision = personalRevision; result.profile.career = career;
+        }
         return result.profile;
+    }
+
+    private static PlayerCareerRecord ReadCareer(JObject json)
+    {
+        RequireFields(json, new[] { "matches", "wins", "kills", "deaths", "headshotKills" }, JTokenType.Integer);
+        var result = json.ToObject<PlayerCareerRecord>();
+        if (result == null || !result.IsValid) throw new UgsAccountException("云端生涯记录格式异常。");
+        return result;
+    }
+
+    private async Task EnsurePublicUidAsync()
+    {
+        RequireSession();
+        string playerId = PlayerId;
+        UidResponse result;
+        try
+        {
+            result = await CloudCodeService.Instance.CallEndpointAsync<UidResponse>(UidScript,
+                new Dictionary<string, object> { { "operation", "ensure" } });
+        }
+        catch (CloudCodeException error) when (error.Reason == CloudCodeExceptionReason.NotFound)
+        { throw new UgsAccountException("数字 UID 服务尚未发布，请检查 FpsAccountUid 脚本和环境。"); }
+        RequireSamePlayer(playerId);
+        if (result == null || !result.ok || !AccountUid.IsValid(result.uid))
+        {
+            string message = result != null && result.code == "uid_setup_required" ? "数字 UID 服务尚未初始化，请联系管理员。" :
+                result != null && result.code == "uid_corrupt" ? "数字 UID 数据异常，请联系管理员。" :
+                result != null && result.code == "uid_exhausted" ? "账号 UID 编号已用尽，请联系管理员。" :
+                "数字 UID 暂时不可用，请稍后重试。";
+            throw new UgsAccountException(message, result != null && result.code == "authentication_required");
+        }
+        PublicUid = result.uid;
+    }
+
+    [Serializable, UnityEngine.Scripting.Preserve] private sealed class UidResponse
+    {
+        public bool ok;
+        public int uid;
+        public string code;
     }
 
     [Serializable, UnityEngine.Scripting.Preserve] private sealed class ProfileResponse
@@ -204,6 +310,7 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
 
     private void OnExpired()
     {
+        PublicUid = 0;
         if (owner == this && !disposed) SessionExpired?.Invoke();
     }
     private void RequireSession()

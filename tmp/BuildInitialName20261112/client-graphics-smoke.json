@@ -1,0 +1,6 @@
+{
+  "scope": "Published client graphics initialization only; no login attempted.",
+  "running": true,
+  "direct3d": true,
+  "managedExceptions": []
+}

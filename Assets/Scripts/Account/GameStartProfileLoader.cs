@@ -2,7 +2,7 @@ using System;
 using System.Collections;
 using UnityEngine;
 
-/// <summary>Fetch the logged-in account's data in GameLobby. The class name preserves existing serialized references.</summary>
+/// <summary>Lobby readiness adapter. Startup reuses Login's profile; LoadUserData explicitly refreshes it for legacy callers.</summary>
 [DisallowMultipleComponent]
 public sealed class GameStartProfileLoader : MonoBehaviour
 {
@@ -38,9 +38,10 @@ public sealed class GameStartProfileLoader : MonoBehaviour
         while (account != null && account.IsBusy) yield return null;
         if (account == null) { Failed("账号会话已关闭，请重新登录。"); yield break; }
         if (!account.HasSession) { Failed("请先登录账号。"); yield break; }
-        // Returning from a match retains the already authenticated profile and network membership.
-        if (reuseAuthenticatedProfile && account.IsAuthenticated)
+        // Login owns initial profile loading. Match returns also retain profile and membership.
+        if (reuseAuthenticatedProfile)
         {
+            if (!account.IsAuthenticated) { Failed("请在登录界面读取用户数据后进入游戏。"); yield break; }
             IsLoading = false; IsReady = true;
             onLoadingChanged.Invoke(false); onMessageChanged.Invoke("");
             onUserDataLoaded.Invoke(account.Profile); Ready?.Invoke(); yield break;

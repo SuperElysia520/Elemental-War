@@ -1,0 +1,9 @@
+﻿{
+    "files":  [
+                  {
+                      "destination":  "State",
+                      "sha256":  "03912EBE456203119F4191AE3865C209A1DCEFBA0FB1DEF1771143257C9F1496",
+                      "file":  "AccountService.dll"
+                  }
+              ]
+}

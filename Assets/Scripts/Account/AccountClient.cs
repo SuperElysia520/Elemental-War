@@ -13,6 +13,8 @@ public sealed partial class AccountClient : MonoBehaviour
     public bool HasSession => UsesUgs ? HasUgsSession : !string.IsNullOrEmpty(AccessToken) && DateTimeOffset.UtcNow.ToUnixTimeSeconds() < expiresAtUnixSeconds;
     public bool IsAuthenticated => HasSession && Profile != null;
     public string AccountId { get; private set; } = "";
+    public int PublicUid => HasSession ? (UsesUgs ? ugs.PublicUid : Profile != null ? Profile.uid : 0) : 0;
+    public string DisplayUid => HasSession ? AccountUid.Format(PublicUid, !UsesUgs || ugs.HasLegacyUid ? AccountId : null) : "";
     public string Username { get; private set; } = "";
     public bool IsBusy { get; private set; }
     private string legacyAccessToken = "";
@@ -74,7 +76,7 @@ public sealed partial class AccountClient : MonoBehaviour
     public void Login(string username, string password, Action<bool, string> completed = null)
         => Authenticate("login", username, password, completed);
 
-    /// <summary>Authenticate in Login; defer applying the profile until GameLobby requests it.</summary>
+    /// <summary>Establish identity first; Login's loading panel then requests the profile before entering GameLobby.</summary>
     public void LoginSession(string username, string password, Action<bool, string> completed = null)
         => Authenticate("login", username, password, completed, false);
 
@@ -239,6 +241,14 @@ public sealed partial class AccountClient : MonoBehaviour
         yield return Send(endpoint, timeout, "POST", (ugsServer ? "/api/ugs" : "/api") + "/matches/server",
             JsonUtility.ToJson(new MatchEvent { matchId = matchId, serverPort = port, @event = eventName }), "",
             (body, status, error) => completed(error));
+    }
+
+    public static IEnumerator SendCareerResult(CareerMatchResultData result, Action<string> completed)
+    {
+        if (AccountServiceSettings.SelectedBackend != AccountBackend.UnityGamingServices) { completed("当前后端不支持云端生涯记录。"); yield break; }
+        if (!TryGetPvpServerEndpoint(out var endpoint, out var timeout, out var error)) { completed(error); yield break; }
+        yield return Send(endpoint, timeout, "POST", "/api/ugs/career/result", JsonUtility.ToJson(result), "",
+            (body, status, failure) => completed(failure));
     }
 
     public static IEnumerator ValidateServerSession(string token, Action<PlayerProfileData, string> completed)

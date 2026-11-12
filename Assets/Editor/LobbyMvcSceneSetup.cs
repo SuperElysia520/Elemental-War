@@ -137,7 +137,6 @@ public static class LobbyMvcSceneSetup
         foreach (var button in tip.GetComponentsInChildren<UnityEngine.UI.Button>(true)) if (button != tip.btnNo) button.gameObject.SetActive(false);
         var confirm = Dialog(exit.gameObject, exit.btnYes, exit.btnNo);
         var wardrobe = CreateCustomization();
-        var loading = CreateLoading();
 
         var avatars = party.avatarCatalog; var homeCharacter = party.homeCharacter;
         var rootObject = home.gameObject;
@@ -147,7 +146,7 @@ public static class LobbyMvcSceneSetup
         rootView.pages = new LobbyPageView[] { mainView, homeView, partyView, roomsView, customView, profile, wardrobe };
         rootView.partyView = partyView; rootView.roomsView = roomsView; rootView.customRoomView = customView;
         rootView.customizationView = wardrobe; rootView.messageDialog = message; rootView.confirmDialog = confirm;
-        rootView.avatars = avatars; rootView.homeCharacter = homeCharacter; rootView.partyCharacters = characters; rootView.loading = loading;
+        rootView.avatars = avatars; rootView.homeCharacter = homeCharacter; rootView.partyCharacters = characters;
         BindIdentity(rootView, homeCanvas);
 
         var mainEnvironment = new GameObject("MainMenuPresentation"); var lobbyEnvironment = new GameObject("LobbyPresentation");
@@ -166,10 +165,10 @@ public static class LobbyMvcSceneSetup
 
         var ui = new GameObject("UI");
         Reparent(mainCanvas.gameObject, ui.transform); Reparent(homeCanvas.gameObject, ui.transform);
-        Reparent(modalCanvas.gameObject, ui.transform); Reparent(wardrobe.gameObject, ui.transform); Reparent(loading, ui.transform);
+        Reparent(modalCanvas.gameObject, ui.transform); Reparent(wardrobe.gameObject, ui.transform);
         foreach (var view in rootView.pages) { view.gameObject.SetActive(false); Save(view.gameObject, view.page + "Panel"); }
-        message.gameObject.SetActive(false); confirm.gameObject.SetActive(false); loading.SetActive(false);
-        Save(message.gameObject, "MessageDialog"); Save(confirm.gameObject, "ConfirmDialog"); Save(loading, "LoadingOverlay");
+        message.gameObject.SetActive(false); confirm.gameObject.SetActive(false);
+        Save(message.gameObject, "MessageDialog"); Save(confirm.gameObject, "ConfirmDialog");
         mainEnvironment.SetActive(true); lobbyEnvironment.SetActive(false); mainView.gameObject.SetActive(true);
         foreach (var character in characters) if (character != null) character.gameObject.SetActive(false);
         EditorSceneManager.MarkSceneDirty(scene);
@@ -317,13 +316,6 @@ public static class LobbyMvcSceneSetup
         view.message = Label(canvas.transform, "Status", "", 44, 823, 1278, 52, 20, new Color(0.64f, 0.82f, 0.98f));
         view.buttons = Bindings(Bind(back, LobbyAction.Back), Bind(view.saveButton, LobbyAction.SaveProfile), Bind(view.reloadButton, LobbyAction.ReloadProfile));
         return view;
-    }
-    private static GameObject CreateLoading()
-    {
-        var canvas = OverlayCanvas("LoadingOverlay", 600, new Vector2(1600, 900));
-        var background = Panel(canvas.transform, "Background", Vector2.zero, Vector2.one, new Color(0.035f, 0.05f, 0.085f, 0.98f)); background.raycastTarget = true;
-        var label = Label(canvas.transform, "Status", "正在读取用户数据…", 300, 390, 1000, 120, 36, Color.white); label.alignment = TextAnchor.MiddleCenter;
-        return canvas.gameObject;
     }
     private static void CreateAvatarPicker(ProfilePanelView profile, PlayerAvatarCatalog catalog)
     {

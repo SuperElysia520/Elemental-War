@@ -38,7 +38,7 @@ namespace FPS.UI
         }
         public void RenderDraft(CustomizationModel draft, PlayerProfileData profile, string text, bool canEdit, bool busy)
         {
-            if (accountLabel != null) accountLabel.text = profile != null ? "已登录：" + profile.username + "\nUID: " + profile.accountId : "请先登录账号。";
+            if (accountLabel != null) accountLabel.text = profile != null ? "已登录：" + profile.DisplayName + "\nUID: " + AccountUid.Format(profile.uid, profile.accountId) : "请先登录账号。";
             if (message != null) message.text = text;
             if (saveLabel != null) saveLabel.text = busy ? "正在同步…" : draft.IsDirty ? "保存更改到账号" : "保存到账号";
             saveButton.interactable = reloadButton.interactable = canEdit && !busy;

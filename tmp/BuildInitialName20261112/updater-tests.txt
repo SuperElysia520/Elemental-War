@@ -1,0 +1,30 @@
+PASS success backs up only programs and preserves existing file ACLs and runtime
+PASS idle DLL-only update preserves PDB and still drains lease
+PASS tampered hash is rejected before stopping task
+PASS unknown manifest file is rejected
+PASS duplicate manifest file is rejected
+PASS extra manifest properties are rejected
+PASS wrong runtime is rejected before stopping task
+PASS foreign listener is rejected before stopping any task
+PASS task working directory must match App exactly
+PASS missing root bridge task is rejected
+PASS unknown AccountService process path is rejected safely
+PASS orphan App process without listener is rejected before stop
+PASS stop command failure does not write or restart
+PASS stop verification refuses StuckTask
+PASS stop verification refuses StuckProcess
+PASS stop verification refuses StuckPort
+PASS stop verification refuses ReusedPid
+PASS task auto restart before lease drain prevents writing
+PASS start failure is static and keeps backups
+PASS local health must not accept OldHealth
+PASS local health must not accept NotReady
+PASS local health must not accept Expired
+PASS local health must not accept Disabled
+PASS local health must not accept StringReady
+PASS local health must not accept StringLease
+PASS local health must not accept InfiniteLease
+PASS local health must not accept Throws
+PASS overlapping directories are rejected
+PASS relative App directory is rejected
+Fixture results: 29 cases, 0 failed. E:\Unity资产\FPS\tmp\BuildInitialName20261112\bridge-recovery-fixtures-03664f48bafb4f20972eb7ad22c1b858\results.json

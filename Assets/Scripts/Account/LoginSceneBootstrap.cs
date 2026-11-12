@@ -1,16 +1,14 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-/// <summary>Fetch account data on entering GameLobby; dedicated servers do not create account UI.</summary>
+/// <summary>Compose the lobby readiness adapter using the profile already loaded in Login.</summary>
 public static class LoginSceneBootstrap
 {
     private static string pendingMessage;
-    private static bool refreshNextLobbyEntry;
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void Reset()
     {
         pendingMessage = "";
-        refreshNextLobbyEntry = false;
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -24,13 +22,11 @@ public static class LoginSceneBootstrap
     {
         if (scene.name != GameFlowScenes.MainMenu) return;
         var existing = FindLoader(scene);
-        if (existing != null) { existing.ReuseAuthenticatedProfile = !refreshNextLobbyEntry; refreshNextLobbyEntry = false; return; }
+        if (existing != null) { existing.ReuseAuthenticatedProfile = true; return; }
         var root = new GameObject("LobbyProfileLoader");
         SceneManager.MoveGameObjectToScene(root, scene);
-        root.AddComponent<GameStartProfileLoader>().ReuseAuthenticatedProfile = !refreshNextLobbyEntry;
-        refreshNextLobbyEntry = false;
+        root.AddComponent<GameStartProfileLoader>().ReuseAuthenticatedProfile = true;
     }
-    public static void PrepareLobbyEntry() => refreshNextLobbyEntry = true;
     public static GameStartProfileLoader FindLoader(Scene scene)
     {
         foreach (GameObject root in scene.GetRootGameObjects())

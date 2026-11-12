@@ -17,6 +17,7 @@ static class BridgeTests
         await Case("forged, malformed, replaced and expired tickets reject", TicketFailures);
         await Case("saved revision change cancels matched admission", RevisionChange);
         await Case("custom-room ticket loads latest profile without admission", CustomRoomLatest);
+        await Case("personal names flow to party members and redeemed tickets without changing login names or readiness", PersonalNames);
         await Case("wrong epoch, expired and mismatched identity slots never execute", UntrustedSlots);
         await Case("join response CAS conflict does not repeat side effects", JoinConflict);
         await Case("ticket response CAS conflict does not mint another ticket", TicketConflict);
@@ -122,6 +123,34 @@ static class BridgeTests
         Check(h.Parties.Reservation(7777).MatchId == "", "Revision failure must cancel the reserved match.");
         await ApiFailure(409, async () => await h.Tickets.RedeemAsync(b.Ticket, default));
         await ApiFailure(401, async () => await h.Tickets.RedeemAsync(a.Ticket, default));
+    }
+
+    private static async Task PersonalNames()
+    {
+        using var h = await Harness.Create();
+        h.Cloud.SetPersonal(Alice, 1, "旅行者甲");
+        h.Cloud.SetPersonal(Bravo, 1, "旅行者乙");
+        var created = Body<PartyState>(await h.Command(Alice, "create"));
+        Check(created.Party!.Members[0].Profile.DisplayName == "旅行者甲" && created.Party.Members[0].Profile.Username == "Alice_01", "Party response carries the saved display name separately from login username.");
+        await h.Command(Bravo, "join", new { partyId = created.Party.Id });
+        await h.Command(Bravo, "ready", new { ready = true });
+        int previousRevision = h.Profiles.GetCached(Bravo).Revision;
+        h.Cloud.SetPersonal(Bravo, 2, "跨设备新名称");
+        await h.Profiles.RefreshAsync([Bravo], default);
+        h.Parties.RefreshProfiles(h.Profiles.GetCached);
+        var updated = h.Parties.Current(h.Profiles.GetCached(Alice)).Party!;
+        var bravo = updated.Members.Single(m => m.Profile.AccountId == Bravo);
+        Check(bravo.Profile.DisplayName == "跨设备新名称" && bravo.Profile.PersonalRevision == 2 && bravo.Ready, "Refreshing a name updates every party member view without revoking ready state.");
+        Check(bravo.Profile.Username == "Bravo_01" && bravo.Profile.Revision == previousRevision, "Cosmetic name refresh preserves login username and character revision.");
+        var ticket = h.Tickets.Create(h.Profiles.GetCached(Bravo), null);
+        var redeemed = await h.Tickets.RedeemAsync(ticket.Ticket, default);
+        Check(redeemed.DisplayName == "跨设备新名称" && redeemed.Username == "Bravo_01", "Redeemed dedicated-server ticket contains the authoritative display name.");
+        h.Cloud.Personal.Remove(Bravo);
+        Check((await h.Profiles.LoadAsync(Bravo, "Bravo_01", default)).DisplayName == "Bravo_01", "Legacy missing personal data falls back to the login name.");
+        h.Cloud.SetPersonal(Bravo, 3, "<b>bad</b>");
+        await ApiFailure(409, async () => { await h.Profiles.LoadAsync(Bravo, "Bravo_01", default); });
+        try { h.Profiles.GetCached(Bravo); throw new Exception("Expected corrupt personal data to invalidate cache."); }
+        catch (ApiException error) { Check(error.StatusCode == 409, "Malformed personal data invalidates cached admission rather than accepting a forged display name."); }
     }
 
     private static async Task CustomRoomLatest()
@@ -557,7 +586,7 @@ static class BridgeTests
         public void Advance(TimeSpan amount) => value += amount;
     }
 
-    private sealed class FakeCloud : IUgsCloudStore
+    private sealed class FakeCloud : IUgsCloudStore, IUgsPersonalCloudStore
     {
         private readonly SortedDictionary<string, UgsCloudItem> items = new(StringComparer.Ordinal);
         private long lockSequence;
@@ -572,6 +601,11 @@ static class BridgeTests
         public bool LoseNextLeaseWriteResponse { get; set; }
         public TaskCompletionSource<string>? HoldLeaseWriteCompletion { get; set; }
         public Dictionary<string, JsonElement> Protected { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, JsonElement> Personal { get; } = new(StringComparer.Ordinal);
+        public void SetPersonal(string id, int revision, string name)
+            => Personal[id] = JsonSerializer.SerializeToElement(new { revision, personal = new { displayName = name, gender = 0, signature = "" } }, Json);
+        public Task<JsonElement?> GetProtectedPersonalAsync(string playerId, CancellationToken cancel)
+            => Task.FromResult(Personal.TryGetValue(playerId, out var value) ? (JsonElement?)value : null);
         public int PageSize { get; init; } = 20;
         public int ProtectedReads { get; private set; }
         public int ListCalls { get; private set; }

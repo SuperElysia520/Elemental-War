@@ -69,6 +69,16 @@ static class HttpChecks
             if (malformed) return Reply("{\"results\":[{\"key\":\"bridge\",\"value\":{}}]}");
             if (request.RequestUri.AbsolutePath.Contains("/players/"))
             {
+                if (request.RequestUri.Query == "?keys=fps_personal_v1")
+                {
+                    Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items"), "Personal names read only the Protected player bucket");
+                    return Reply("{\"results\":[{\"key\":\"fps_personal_v1\",\"value\":{\"revision\":1,\"personal\":{\"displayName\":\"旅行者\",\"gender\":0,\"signature\":\"\"}},\"writeLock\":\"stored-lock\"}]}");
+                }
+                if (request.RequestUri.Query == "?keys=fps_career_v1")
+                {
+                    Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items"), "Career reads use the Protected player bucket");
+                    return Reply("{\"results\":[{\"key\":\"fps_career_v1\",\"value\":{\"matches\":2,\"wins\":1,\"kills\":3,\"deaths\":2,\"headshotKills\":1,\"lastSequence\":2},\"writeLock\":\"stored-lock\"}]}");
+                }
                 Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items") && request.RequestUri.Query == "?keys=fps_profile_v1", "Profiles read only the Protected bucket and exact profile key");
                 return Reply("{\"results\":[{\"key\":\"fps_profile_v1\",\"value\":{\"accountId\":\"player-1\"},\"writeLock\":\"stored-lock\"}]}");
             }
@@ -94,6 +104,10 @@ static class HttpChecks
         Check(page.After == "bridge", "Pagination uses the last returned key, never a supplied URL");
         await store.ListPrivateAsync(page.After, default);
         Check((await store.GetProtectedProfileAsync("player-1", default))!.Value.GetProperty("accountId").GetString() == "player-1", "Protected response is cloned before HTTP JSON is disposed");
+        Check((await store.GetProtectedPersonalAsync("player-1", default))!.Value.GetProperty("personal").GetProperty("displayName").GetString() == "旅行者", "Personal-name REST response survives disposal and keeps the existing login profile separate");
+        Check((await store.GetCareerAsync("player-1", default))!.Value.GetProperty("matches").GetInt32() == 2, "Career REST read preserves cloud totals and real write lock");
+        await store.SetCareerAsync("player-1", new CareerTotals(3, 2, 4, 3, 1, 3), "stored-lock", default);
+        Check(mutations == 3, "Career REST mutation confirms its write lock exactly once");
         await store.DeletePrivateAsync("p_player-1", "stored-lock", default);
         malformed = true;
         try { await store.GetPrivateAsync("bridge", default); throw new InvalidOperationException("Expected malformed-response rejection"); }
@@ -193,11 +207,13 @@ static class HttpChecks
         Check((await client.PostAsJsonAsync("/api/ugs/game-ticket/redeem", new { ticket = ticket.Ticket })).StatusCode == HttpStatusCode.Unauthorized, "Real HTTP ticket replay is 401");
         Check((await client.PostAsJsonAsync("/api/ugs/game-ticket/redeem", new { ticket = new string('A', 64) })).StatusCode == HttpStatusCode.Unauthorized, "Real HTTP forged ticket is 401");
         Check((await client.PostAsJsonAsync("/api/ugs/game-ticket/redeem", new { ticket = "", playerId = a.AccountId })).StatusCode == HttpStatusCode.BadRequest, "Real HTTP rejects forged identity parameters");
-        foreach (var path in new[] { "/api/ugs/matches/server/7777", "/api/ugs/game-ticket/redeem", "/api/ugs/matches/server" })
+        foreach (var path in new[] { "/api/ugs/matches/server/7777", "/api/ugs/game-ticket/redeem", "/api/ugs/matches/server", "/api/ugs/career/result" })
         {
             using var request = new HttpRequestMessage(path.EndsWith("7777") ? HttpMethod.Get : HttpMethod.Post, path);
             request.Headers.Add("X-Test-Remote", "1"); request.Headers.Add("X-Forwarded-For", "127.0.0.1");
-            if (request.Method == HttpMethod.Post) request.Content = JsonContent.Create(path.EndsWith("redeem") ? (object)new { ticket = ticket.Ticket } : new MatchServerEvent(admission.MatchId, 7777, "connected"));
+            if (request.Method == HttpMethod.Post) request.Content = JsonContent.Create(path.EndsWith("redeem") ? (object)new { ticket = ticket.Ticket } : path.EndsWith("result")
+                ? new CareerMatchResult(Guid.NewGuid().ToString("N"), 7777, 1, [new("player-A", 1, 1, 0, 1), new("player-B", 2, 0, 1, 0)])
+                : new MatchServerEvent(admission.MatchId, 7777, "connected"));
             Check((await client.SendAsync(request)).StatusCode == HttpStatusCode.Forbidden, "Each UGS server route rejects remote peers despite forged forwarded-loopback header");
         }
         await app.StopAsync();

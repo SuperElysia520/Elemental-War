@@ -51,6 +51,8 @@ if (ugsOptions.Enabled)
     builder.Services.AddSingleton<IUgsCloudStore, UgsCloudStore>();
     builder.Services.AddSingleton<UgsProfiles>();
     builder.Services.AddSingleton<UgsTicketStore>();
+    builder.Services.AddSingleton<UgsCareerStore>();
+    builder.Services.AddHostedService<UgsCareerUploader>();
     builder.Services.AddSingleton<UgsPvpWorker>();
     builder.Services.AddHostedService(services => services.GetRequiredService<UgsPvpWorker>());
 }

@@ -177,6 +177,7 @@ public class PvpPlayerCombat : NetworkBehaviour
             Kills.Value = 0;
             Deaths.Value = 0;
             HeadshotKills.Value = 0;
+            LobbyManager.Instance?.CaptureCareerPlayer(this);
         }
 
         ApplyDeadState(IsDead.Value);
@@ -445,6 +446,8 @@ public class PvpPlayerCombat : NetworkBehaviour
         attacker.Kills.Value++;
         if (isHeadshot)
             attacker.HeadshotKills.Value++;
+        LobbyManager.Instance?.CaptureCareerPlayer(this);
+        LobbyManager.Instance?.CaptureCareerPlayer(attacker);
         lobby.RegisterPvpKill(attackerTeam);
 
         if (!lobby.IsPvpMatchOver)

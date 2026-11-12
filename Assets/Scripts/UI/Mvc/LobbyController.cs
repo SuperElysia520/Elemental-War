@@ -31,7 +31,8 @@ namespace FPS.UI
             foreach (var page in view.pages) page.ActionRequested += Execute;
             view.roomsView.JoinRequested += Join;
             view.customizationView.ChoiceRequested += ChangeChoice;
-            foreach (var page in view.pages) if (page is ProfilePanelView profile) profile.AvatarRequested += SaveAvatar;
+            foreach (var page in view.pages) if (page is ProfilePanelView profile)
+            { profile.AvatarRequested += SaveAvatar; profile.PersonalRequested += SavePersonal; }
             view.messageDialog.Confirmed += CloseDialog; view.messageDialog.Cancelled += CloseDialog;
             view.confirmDialog.Confirmed += Confirm; view.confirmDialog.Cancelled += CloseDialog;
             account.StateChanged += AccountChanged; account.ProfileChanged += ProfileChanged;
@@ -54,9 +55,12 @@ namespace FPS.UI
                 case LobbyAction.Character: case LobbyAction.Clothes: case LobbyAction.Loadout:
                     if (!CanEdit(out string reason)) { Message(reason); break; }
                     draft.Load(account.Profile); draftMessage = ""; Model.Navigate(LobbyPage.Customization); break;
-                case LobbyAction.Profile: Model.Navigate(LobbyPage.Profile); break;
-                case LobbyAction.ProfileOverview: Model.ShowProfileInformation = false; break;
-                case LobbyAction.ProfileInformation: Model.ShowProfileInformation = true; break;
+                case LobbyAction.Profile:
+                    Model.ShowProfileInformation = false; Model.ShowAvatarPicker = false;
+                    Model.Navigate(LobbyPage.Profile);
+                    account.RefreshProfile((ok, message) => { if (!disposed && !ok) Message(message); }); break;
+                case LobbyAction.ProfileOverview: Model.ShowProfileInformation = false; Model.ShowAvatarPicker = false; break;
+                case LobbyAction.ProfileInformation: Model.ShowProfileInformation = true; Model.ShowAvatarPicker = false; break;
                 case LobbyAction.Avatar: Model.ShowAvatarPicker = true; break;
                 case LobbyAction.CloseAvatarPicker: Model.ShowAvatarPicker = false; break;
                 case LobbyAction.CreateParty:
@@ -87,6 +91,8 @@ namespace FPS.UI
             if (disposed) return;
             if (modal) { CloseDialog(); return; }
             if (Busy) return;
+            if (Model.Page == LobbyPage.Profile)
+                foreach (var page in view.pages) if (page is ProfilePanelView profile && profile.CloseNameEditor()) return;
             if (Model.Page == LobbyPage.Profile && Model.ShowAvatarPicker) { Model.ShowAvatarPicker = false; Refresh(); return; }
             if (Model.Page == LobbyPage.MainMenu) { Ask("确认退出游戏？", Application.Quit); return; }
             if (Model.Page == LobbyPage.Party) { LeaveParty(); return; }
@@ -105,6 +111,22 @@ namespace FPS.UI
             account.SaveAvatar(id, (ok, message) =>
             { if (disposed) return; if (ok) Model.ShowAvatarPicker = false; else Message(message); Refresh(); });
         }
+        private void SavePersonal(PersonalProfileData personal)
+        {
+            if (disposed || Busy || modal || Model.Page != LobbyPage.Profile)
+            { foreach (var page in view.pages) if (page is ProfilePanelView profile) profile.PersonalSaveCompleted(false); return; }
+            if (!CanEdit(out string reason))
+            { foreach (var page in view.pages) if (page is ProfilePanelView profile) profile.PersonalSaveCompleted(false); Message(reason); return; }
+            account.SavePersonalProfile(personal, (ok, message) =>
+            {
+                if (disposed) return;
+                foreach (var page in view.pages) if (page is ProfilePanelView profile) profile.PersonalSaveCompleted(ok);
+                if (!ok) Message(message);
+                Refresh();
+            });
+            Refresh();
+        }
+
         private void LeaveParty()
         {
             if (party.Party == null) { Model.Reset(LobbyPage.Home); return; }
@@ -235,7 +257,8 @@ namespace FPS.UI
             disposed = true; confirmed = null;
             foreach (var page in view.pages) page.ActionRequested -= Execute;
             view.roomsView.JoinRequested -= Join; view.customizationView.ChoiceRequested -= ChangeChoice;
-            foreach (var page in view.pages) if (page is ProfilePanelView profile) profile.AvatarRequested -= SaveAvatar;
+            foreach (var page in view.pages) if (page is ProfilePanelView profile)
+            { profile.AvatarRequested -= SaveAvatar; profile.PersonalRequested -= SavePersonal; }
             view.messageDialog.Confirmed -= CloseDialog; view.messageDialog.Cancelled -= CloseDialog;
             view.confirmDialog.Confirmed -= Confirm; view.confirmDialog.Cancelled -= CloseDialog;
             account.StateChanged -= AccountChanged; account.ProfileChanged -= ProfileChanged;

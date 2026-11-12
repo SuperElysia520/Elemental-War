@@ -1,0 +1,20 @@
+{
+  "implemented": [
+    "InitialNamePanel is wired to Login and waits for cloud confirmation",
+    "Existing cloud names skip the prompt on repeat login",
+    "Party and dedicated-server identity use game display names",
+    "Bridge merges protected personal details without altering authentication username or character revision"
+  ],
+  "validation": {
+    "uiChecks": 100,
+    "bridgeScenarios": 25,
+    "bridgeAssertions": 189,
+    "httpAssertions": 87,
+    "newRuntimeErrors": 0,
+    "knownBaselineErrors": 2,
+    "originalUnsavedScenePreserved": true,
+    "assetsUnchangedDuringRuntime": true
+  },
+  "onlineDeployed": false,
+  "buildsRebuilt": false
+}

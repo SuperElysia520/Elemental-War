@@ -1,0 +1,28 @@
+{
+  "implemented": [
+    "Profile tabs and persistent yellow selection",
+    "Avatar entry resets FirstPagePanel",
+    "Cloud display name, gender, signature and avatar editing",
+    "Clipped vertical avatar grid and visible scrollbar",
+    "Dedicated-server career outbox and bridge cloud writer"
+  ],
+  "validation": {
+    "unityUiChecks": 90,
+    "cloudScriptChecks": 98,
+    "careerAssertions": 19,
+    "httpAssertions": 83,
+    "bridgeScenarios": 24,
+    "bridgeAssertions": 176,
+    "newRuntimeErrors": 0,
+    "knownVisualScriptingBaselineErrors": 2
+  },
+  "deployment": {
+    "onlineChanged": false,
+    "required": [
+      "Publish FpsProfile and add optional JSON parameter personal",
+      "Rebuild/update client and dedicated game server",
+      "Update bridge; preserve career-results and per-port CareerOutbox",
+      "Validate a real match and same account on another device"
+    ]
+  }
+}

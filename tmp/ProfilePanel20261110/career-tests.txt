@@ -1,0 +1,20 @@
+PASS Server acceptance durably queues without trusting client totals or waiting on cloud
+PASS Winner receives exact server counters
+PASS Loser receives exact server counters
+PASS Repeated result never counts twice
+PASS Different payload for a settled match is rejected
+PASS Bridge restart preserves settled match receipts
+PASS Cloud response loss leaves a recoverable durable result
+PASS Restart after partial cloud commit applies each player exactly once
+PASS Committed checkpoint prevents replay after lost acknowledgement
+PASS Cloud CAS conflict is surfaced without an unlocked retry
+PASS CAS retry resumes from fresh cloud totals
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Malformed, duplicate, wrong-port or inconsistent result rejected
+PASS Corrupt cloud totals fail closed and remain queued for repair
+Career integration: PASS; 19 assertions. Fake cloud only. Durable evidence: E:\Unity资产\FPS\tmp\ProfilePanel20261110\Career-f64ccf93c0d24bdfb3f8e419113f0e15

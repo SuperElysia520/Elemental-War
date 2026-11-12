@@ -28,14 +28,14 @@ function harness(options = {}) {
       calls.reads.push({ projectId, playerId, keys: clone(keys) });
       if (options.readError) throw options.readError;
       if (options.readResponse) return clone(options.readResponse);
-      const item = clone(state.get(projectId + "/" + playerId));
+      const item = clone(state.get(projectId + "/" + playerId + (keys[0] === KEY ? "" : "/" + keys[0])));
       if (options.afterSnapshot) await options.afterSnapshot({ projectId, playerId, item });
       return { data: { results: item ? [item] : [] } };
     }
     async setProtectedItem(projectId, playerId, body) {
       calls.writes.push({ projectId, playerId, body: clone(body) });
       if (options.writeError) throw options.writeError;
-      const id = projectId + "/" + playerId;
+      const id = projectId + "/" + playerId + (body.key === KEY ? "" : "/" + body.key);
       const current = state.get(id);
       if (Object.prototype.hasOwnProperty.call(body, "writeLock") &&
           (!current || current.writeLock !== body.writeLock)) {
@@ -76,13 +76,65 @@ function gate(participants) {
   return async () => { if (++arrived === participants) release(); await ready; };
 }
 
-test("publish metadata lists the six Dashboard parameters", () => {
+test("publish metadata lists the seven Dashboard parameters", () => {
   const h = harness();
   assert.deepEqual(h.params, {
     operation: { type: "String", required: true }, username: { type: "String", required: false },
     revision: { type: "Numeric", required: false }, appearance: { type: "JSON", required: false },
-    loadout: { type: "JSON", required: false }, avatarId: { type: "Numeric", required: false }
+    loadout: { type: "JSON", required: false }, avatarId: { type: "Numeric", required: false },
+    personal: { type: "JSON", required: false }
   });
+});
+
+const personal = () => ({ displayName: "旅行者", gender: 2, signature: "今天也要赢！" });
+
+test("personal details use a separate protected key and leave identity, character and revision unchanged", async () => {
+  const h = harness(); h.seed();
+  const initial = clone(h.state.get("project-1/player-1"));
+  const result = await h.run({ operation: "personal", revision: 0, personal: personal() });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.profile.personal, personal());
+  assert.equal(result.profile.username, "Account_1");
+  assert.equal(result.profile.revision, 1);
+  assert.equal(result.profile.personalRevision, 1);
+  assert.deepEqual(h.state.get("project-1/player-1"), initial);
+  assert.deepEqual(h.state.get("project-1/player-1/fps_personal_v1").value, { revision: 1, personal: personal() });
+  const saved = await h.run(save(1));
+  assert.equal(saved.ok, true);
+  assert.equal(h.state.get("project-1/player-1/fps_personal_v1").value.personal.signature, personal().signature);
+});
+
+test("personal details can be saved before a character profile exists", async () => {
+  const h = harness();
+  const result = await h.run({ operation: "personal", revision: 0, personal: personal() });
+  assert.equal(result.ok, true);
+  assert.equal(h.state.has("project-1/player-1"), false);
+  assert.equal(result.profile.revision, 0);
+});
+
+test("personal revisions reject stale updates and preserve the other device's changes", async () => {
+  const h = harness();
+  await h.run({ operation: "personal", revision: 0, personal: personal() });
+  const stale = await h.run({ operation: "personal", revision: 0, personal: { ...personal(), gender: 1 } });
+  assert.equal(stale.code, "profile_conflict");
+  const updated = await h.run({ operation: "personal", revision: 1, personal: { ...personal(), signature: "" } });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.profile.personalRevision, 2);
+  assert.equal(updated.profile.personal.signature, "");
+  assert.equal(h.calls.writes[1].body.writeLock, "lock-1");
+});
+
+test("invalid personal details and forged fields are rejected before any storage calls", async t => {
+  for (const invalid of [null, {}, { ...personal(), gender: 3 }, { ...personal(), gender: 1.5 },
+    { ...personal(), displayName: "a".repeat(21) }, { ...personal(), displayName: " bad " },
+    { ...personal(), displayName: "<b>bad</b>" }, { ...personal(), signature: "a".repeat(81) },
+    { ...personal(), signature: "line\nbreak" }, { ...personal(), accountId: "other-player" }]) {
+    await t.test(JSON.stringify(invalid), async () => {
+      const h = harness();
+      assert.equal((await h.run({ operation: "personal", revision: 0, personal: invalid })).code, "invalid_profile");
+      assert.equal(h.calls.reads.length, 0); assert.equal(h.calls.writes.length, 0);
+    });
+  }
 });
 
 test("missing load returns virtual defaults without creating Cloud Save data", async () => {

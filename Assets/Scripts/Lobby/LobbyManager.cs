@@ -205,6 +205,31 @@ public class LobbyManager : MonoBehaviour
     private readonly Dictionary<ulong, string> m_ClientNames = new Dictionary<ulong, string>();
     private readonly List<ulong> m_JoinOrder = new List<ulong>();
 
+    private readonly Dictionary<ulong, CareerPlayerResultData> m_CareerPlayers = new Dictionary<ulong, CareerPlayerResultData>();
+    private string m_CareerMatchId;
+    private bool m_CareerQueued;
+    private PvpCareerReporter m_CareerReporter;
+
+    public void CaptureCareerPlayer(PvpPlayerCombat player)
+    {
+        if (!m_IsDedicatedPvpServer || player == null || !player.IsServer || string.IsNullOrEmpty(m_CareerMatchId)) return;
+        if (!m_CareerPlayers.TryGetValue(player.OwnerClientId, out var record))
+        {
+            if (!m_ClientProfiles.TryGetValue(player.OwnerClientId, out var profile)) return;
+            record = new CareerPlayerResultData { accountId = profile.accountId, team = (byte)player.Team };
+            m_CareerPlayers.Add(player.OwnerClientId, record);
+        }
+        record.kills = player.Kills.Value; record.deaths = player.Deaths.Value; record.headshotKills = player.HeadshotKills.Value;
+    }
+    private void QueueCareerResult(LobbyState lobby)
+    {
+        if (m_CareerQueued || string.IsNullOrEmpty(m_CareerMatchId) || m_CareerPlayers.Count < 2 || AccountServiceSettings.SelectedBackend != AccountBackend.UnityGamingServices) return;
+        if (m_CareerReporter == null) { m_CareerReporter = gameObject.AddComponent<PvpCareerReporter>(); m_CareerReporter.Initialize(GetGamePort()); }
+        m_CareerReporter.Queue(new CareerMatchResultData { matchId = m_CareerMatchId, serverPort = GetGamePort(), winnerTeam = (byte)lobby.WinnerTeam,
+            players = new List<CareerPlayerResultData>(m_CareerPlayers.Values).ToArray() });
+        m_CareerQueued = true;
+    }
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -222,6 +247,8 @@ public class LobbyManager : MonoBehaviour
         if (discovery == null)
             discovery = GetComponent<LanDiscovery>();
 
+        if (DedicatedServerBootstrap.IsDedicatedServerProcess && AccountServiceSettings.SelectedBackend == AccountBackend.UnityGamingServices)
+        { m_CareerReporter = gameObject.AddComponent<PvpCareerReporter>(); m_CareerReporter.Initialize(GetGamePort()); }
         EnsureNetworkCallbacks();
         SceneManager.sceneLoaded += OnLocalSceneLoaded;
     }
@@ -259,6 +286,7 @@ public class LobbyManager : MonoBehaviour
             SceneManager.GetActiveScene().name != GameFlowScenes.PvpMatch)
             return;
 
+        QueueCareerResult(lobby);
         double now = networkManager.ServerTime.Time;
         if (lobby.PvpReturnToLobbyAtServerTime.Value == 0d)
         {
@@ -1083,7 +1111,7 @@ public class LobbyManager : MonoBehaviour
                         return;
                     }
                 }
-                payload.playerName = profile.username;
+                payload.playerName = profile.DisplayName;
                 payload.gameTicket = null;
                 StartCoroutine(ApproveDedicatedReservation(clientId, payload, response, profile));
             }));
@@ -1765,6 +1793,7 @@ public class LobbyManager : MonoBehaviour
             else if (lobby.UpdatePvpPlayerProfile(clientId, profile))
             {
                 m_ClientProfiles[clientId] = profile;
+                m_ClientNames[clientId] = profile.DisplayName;
                 validationError = string.Empty;
                 if (preparationId > 0 && preparationId == m_PvpStartPreparationId)
                     m_PvpStartWaitingClients.Remove(clientId);
@@ -1989,6 +2018,8 @@ public class LobbyManager : MonoBehaviour
         if (clientsTimedOut != null && clientsTimedOut.Count > 0)
             Debug.LogWarning("[Lobby] 部分玩家加载场景超时，数量: " + clientsTimedOut.Count);
 
+        m_CareerPlayers.Clear(); m_CareerQueued = false;
+        m_CareerMatchId = CurrentLobby.IsMatchmaking ? CurrentLobby.MatchedSessionId.Value.ToString() : Guid.NewGuid().ToString("N");
         foreach (ulong clientId in m_JoinOrder)
         {
             if (NetworkManager.Singleton.ConnectedClients.ContainsKey(clientId))

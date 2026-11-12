@@ -1,0 +1,26 @@
+PASS two real parties match, roster tickets redeem once
+PASS forged, malformed, replaced and expired tickets reject
+PASS saved revision change cancels matched admission
+PASS custom-room ticket loads latest profile without admission
+PASS personal names flow to party members and redeemed tickets without changing login names or readiness
+PASS wrong epoch, expired and mismatched identity slots never execute
+PASS join response CAS conflict does not repeat side effects
+PASS ticket response CAS conflict does not mint another ticket
+PASS reused request ID with different command does not execute
+PASS live worker lease refuses another worker
+PASS health expires independently of ownership and recovers after renewal
+PASS failed cloud lease writes never extend reported health
+PASS initial cloud write must succeed before a worker becomes healthy
+PASS corrupt Protected data invalidates cache and blocks creation
+PASS teammate profile update revokes readiness before queue
+PASS missing Protected profile gives default without persistence
+PASS private mailbox uses actual write locks and pagination
+PASS fifty full rooms fit the complete mailbox slot limit or reject safely
+PASS startup survives a transient TLS failure and recovers on the same worker
+PASS startup retries timeout, throttling and temporary cloud failures
+PASS startup recovers when its lease POST committed but the response was lost
+PASS stopping during bootstrap delay cancels all future retries
+PASS stopping during the first lease POST prevents late healthy publication
+PASS startup permission denial is fatal without retry
+PASS startup refuses another live epoch without retry
+UGS bridge offline integration: PASS; 25 scenarios, 189 assertions. No HTTP, cloud credentials or system changes.

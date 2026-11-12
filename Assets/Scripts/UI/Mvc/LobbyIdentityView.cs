@@ -10,8 +10,8 @@ namespace FPS.UI
         public void Render(PlayerProfileData profile, bool visible)
         {
             gameObject.SetActive(visible);
-            if (uid != null) uid.text = profile != null ? "UID: " + profile.accountId : "";
-            if (legacyUid != null) legacyUid.text = profile != null ? "UID: " + profile.accountId : "";
+            if (uid != null) uid.text = profile != null ? "UID: " + AccountUid.Format(profile.uid, profile.accountId) : "";
+            if (legacyUid != null) legacyUid.text = profile != null ? "UID: " + AccountUid.Format(profile.uid, profile.accountId) : "";
         }
     }
 }

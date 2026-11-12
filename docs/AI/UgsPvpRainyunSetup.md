@@ -167,3 +167,17 @@ worker 重启会更新 epoch，旧 pending 命令和票据不可继续使用，�
 已完成的后端本地验证包括：实际 worker、PartyStore 和票据逻辑的 14 个场景、116 项断言；Cloud Save REST 替代网络边界与真实回环 HTTP 的 51 项断言；原 SelfHosted HTTP 和组队规则的 74 项回归。前两组覆盖匹配名单、单次票据、档案版本变更、写锁冲突、过期与重启隔离、响应大小和专服接口拒绝公网来源。安装器另通过 PowerShell 5.1 语法及 10 项隔离预检；没有实际建立系统任务或改 ACL。
 
 此 bridge 通过轮询传递命令，默认每秒扫描 mailbox、每 5 秒续租；不是实时推送，命令有效期为 30 秒。部署时先用两个客户端验收，再增加玩家数量，并关注 UGS 请求额度、服务限速和雨云到 UGS 的延迟。无法读取权威档案时会拒绝相关入场或取消该队伍准备，不会接收客户端自报身份、外观或阵营来绕过校验。
+
+## 2026-11-10 专服生涯战绩同步
+
+更新后的战斗专服在已完成 PvP（包含匹配与自定义房间）结算时，从服务器的 PvpPlayerCombat 计数生成唯一对局结果；中途离开的成员已取得的计数保留，未完成对局不计入。客户端不提交统计。
+
+专服先把结果持久化到 Application.persistentDataPath 下按游戏端口隔离的 CareerOutbox_<port>，通过原同机 endpoint 向 POST /api/ugs/career/result 提交，失败会重试，重启后继续发送。该路由沿用真实回环来源检查，忽略伪造转发来源；不向玩家开放 HTTP。
+
+bridge 在 AccountStorePath 所在目录的 career-results 下以对局 ID 保存结算回执，然后返回确认。单一后台上传器持有效 bridge lease 时按持久化序号依次上传，写入每位玩家 Protected fps_career_v1（matches、wins、kills、deaths、headshotKills、lastSequence）。真实 writeLock 防止覆盖冲突；每人 checkpoint 避免部分写入或响应丢失后的重复累计。相同对局重复上报直接确认，内容冲突拒绝。既有 Cloud Save Editor 权限覆盖新键，不把服务账号放进客户端。
+
+**升级必须保留原 State/AccountStorePath 目录中的 career-results 和专服各端口的 CareerOutbox，不能只迁移 accounts.json，也不能在新 State 目录中从零重置结算序号。** 每个 UGS 环境只运行一个 bridge 写入器。更换机器时同步迁移这两类状态；云端键使用同一项目、环境。目录丢失或云端生涯损坏应先停止写入并恢复状态，不能清空键来解决。
+
+部署内容：更新 AccountService/bridge 与 Unity 战斗专服，使用新版客户端；另外发布当前 FpsProfile 并新增可选 JSON 参数 personal。历史完成但没有保存过统计的对局无法恢复。上线后用两个真实客户端完成一场对局，确认相同账号换设备后仍读到相同累计值，再检查重发同一结果没有增加场次。
+
+本轮验证为本地假云端及真实回环 HTTP，不等于已更新雨云或已验证公网比赛；未操作线上账号或服务。

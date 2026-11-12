@@ -10,9 +10,13 @@ public sealed class LoginUI : MonoBehaviour
     public GameObject registrationPanel;
     public GameObject readyPanel;
     public GameObject loadingPanel;
+    public InitialNamePanelView initialNamePanel;
     [Header("场景加载进度")]
     public UnityEngine.UI.Image loadingProgressImage;
     public UnityEngine.UI.Text loadingProgressText;
+    public TMPro.TMP_Text loadingProgressTmpText;
+    [Header("加载状态")]
+    public TMPro.TMP_Text loadingStatusText;
     [Header("登录输入")]
     public UnityEngine.UI.InputField loginUsername;
     public UnityEngine.UI.InputField loginPassword;
@@ -49,12 +53,14 @@ public sealed class LoginUI : MonoBehaviour
     {
         controller.Changed += Refresh;
         controller.LoadingProgressChanged += RefreshLoadingProgress;
+        if (initialNamePanel != null) initialNamePanel.Confirmed += controller.ConfirmInitialName;
         Refresh();
     }
     private void OnDisable()
     {
         controller.Changed -= Refresh;
         controller.LoadingProgressChanged -= RefreshLoadingProgress;
+        if (initialNamePanel != null) initialNamePanel.Confirmed -= controller.ConfirmInitialName;
         ClearPasswords();
     }
 
@@ -89,9 +95,11 @@ public sealed class LoginUI : MonoBehaviour
         SetPanel(registrationPanel, state == LoginViewState.Registration);
         SetPanel(readyPanel, state == LoginViewState.Ready);
         SetPanel(loadingPanel, state == LoginViewState.Loading);
+        if (initialNamePanel != null) initialNamePanel.Present(state == LoginViewState.InitialName, controller.IsBusy, controller.Message);
         RefreshLoadingProgress(controller.LoadingProgress);
+        if (loadingStatusText != null) loadingStatusText.text = controller.Message;
         if (usernameText != null) usernameText.text = controller.Username;
-        if (uidText != null) uidText.text = controller.AccountId == "" ? "" : "UID: " + controller.AccountId;
+        if (uidText != null) uidText.text = controller.Uid == "" ? "" : "UID: " + controller.Uid;
         if (messageText != null) messageText.text = controller.Message;
         if (additionalMessageTexts != null)
             foreach (UnityEngine.UI.Text label in additionalMessageTexts) if (label != null) label.text = controller.Message;
@@ -102,10 +110,11 @@ public sealed class LoginUI : MonoBehaviour
     private void RefreshLoadingProgress(float progress)
     {
         if (loadingProgressImage != null) loadingProgressImage.fillAmount = progress;
-        if (loadingProgressText != null)
+        if (loadingProgressText != null || loadingProgressTmpText != null)
         {
             string percentage = Mathf.FloorToInt(progress * 100f) + "%";
-            if (loadingProgressText.text != percentage) loadingProgressText.text = percentage;
+            if (loadingProgressText != null && loadingProgressText.text != percentage) loadingProgressText.text = percentage;
+            if (loadingProgressTmpText != null && loadingProgressTmpText.text != percentage) loadingProgressTmpText.text = percentage;
         }
     }
 

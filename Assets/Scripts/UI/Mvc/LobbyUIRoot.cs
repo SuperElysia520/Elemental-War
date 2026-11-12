@@ -14,7 +14,6 @@ namespace FPS.UI
         public CustomizationView customizationView;
         public LobbyDialogView messageDialog, confirmDialog;
         public PlayerAvatarCatalog avatars;
-        public GameObject loading;
         public GameObject[] mainEnvironment = new GameObject[0], lobbyEnvironment = new GameObject[0], mainDecorations = new GameObject[0];
         public GameObject homeCharacter;
         public GameObject mainCharacter;
@@ -26,7 +25,6 @@ namespace FPS.UI
         {
             foreach (var page in pages) page.Show(false);
             messageDialog.Hide(); confirmDialog.Hide();
-            if (loading != null) loading.SetActive(!DedicatedServerBootstrap.IsDedicatedServerProcess);
         }
         private IEnumerator Start()
         {
@@ -45,7 +43,6 @@ namespace FPS.UI
             if (LobbyManager.Instance == null) throw new InvalidOperationException("GameLobby requires its authored network root.");
             controller = new LobbyController(this, account, party, LobbyManager.Instance);
             controller.Initialize();
-            if (loading != null) loading.SetActive(false);
         }
         private void Update()
         { if (controller != null && Input.GetKeyDown(KeyCode.Escape)) controller.Back(); }
