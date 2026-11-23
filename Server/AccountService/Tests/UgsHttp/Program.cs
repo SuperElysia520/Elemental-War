@@ -69,18 +69,13 @@ static class HttpChecks
             if (malformed) return Reply("{\"results\":[{\"key\":\"bridge\",\"value\":{}}]}");
             if (request.RequestUri.AbsolutePath.Contains("/players/"))
             {
-                if (request.RequestUri.Query == "?keys=fps_personal_v1")
-                {
-                    Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items"), "Personal names read only the Protected player bucket");
-                    return Reply("{\"results\":[{\"key\":\"fps_personal_v1\",\"value\":{\"revision\":1,\"personal\":{\"displayName\":\"旅行者\",\"gender\":0,\"signature\":\"\"}},\"writeLock\":\"stored-lock\"}]}");
-                }
                 if (request.RequestUri.Query == "?keys=fps_career_v1")
                 {
                     Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items"), "Career reads use the Protected player bucket");
                     return Reply("{\"results\":[{\"key\":\"fps_career_v1\",\"value\":{\"matches\":2,\"wins\":1,\"kills\":3,\"deaths\":2,\"headshotKills\":1,\"lastSequence\":2},\"writeLock\":\"stored-lock\"}]}");
                 }
-                Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items") && request.RequestUri.Query == "?keys=fps_profile_v1", "Profiles read only the Protected bucket and exact profile key");
-                return Reply("{\"results\":[{\"key\":\"fps_profile_v1\",\"value\":{\"accountId\":\"player-1\"},\"writeLock\":\"stored-lock\"}]}");
+                Check(request.RequestUri.AbsolutePath.EndsWith("/protected/items") && request.RequestUri.Query == "?keys=fps_profile_v1&keys=fps_personal_v1", "One Protected GET selects both keys using the Unity SDK's repeated-key encoding");
+                return Reply("{\"results\":[{\"key\":\"fps_personal_v1\",\"value\":{\"personal\":{\"displayName\":\"旅行者\"}},\"writeLock\":\"personal-lock\"},{\"key\":\"fps_profile_v1\",\"value\":{\"accountId\":\"player-1\"},\"writeLock\":\"stored-lock\"}]}");
             }
             Check(request.RequestUri.AbsolutePath.EndsWith("/custom/fps_pvp_bridge_v1/private/items"), "Mailbox uses Private Custom endpoint");
             return Reply("{\"results\":[{\"key\":\"bridge\",\"value\":{\"version\":1},\"writeLock\":\"stored-lock\"}],\"links\":{\"next\":\"https://untrusted.invalid/never-follow\"}}");
@@ -103,8 +98,10 @@ static class HttpChecks
         var page = await store.ListPrivateAsync(null, default);
         Check(page.After == "bridge", "Pagination uses the last returned key, never a supplied URL");
         await store.ListPrivateAsync(page.After, default);
-        Check((await store.GetProtectedProfileAsync("player-1", default))!.Value.GetProperty("accountId").GetString() == "player-1", "Protected response is cloned before HTTP JSON is disposed");
-        Check((await store.GetProtectedPersonalAsync("player-1", default))!.Value.GetProperty("personal").GetProperty("displayName").GetString() == "旅行者", "Personal-name REST response survives disposal and keeps the existing login profile separate");
+        var data = await store.GetProtectedProfileAsync("player-1", default);
+        Check(data.Profile!.Value.GetProperty("accountId").GetString() == "player-1" &&
+            data.Personal!.Value.GetProperty("personal").GetProperty("displayName").GetString() == "旅行者",
+            "Batched results are separated by key even in reverse response order and survive disposal");
         Check((await store.GetCareerAsync("player-1", default))!.Value.GetProperty("matches").GetInt32() == 2, "Career REST read preserves cloud totals and real write lock");
         await store.SetCareerAsync("player-1", new CareerTotals(3, 2, 4, 3, 1, 3), "stored-lock", default);
         Check(mutations == 3, "Career REST mutation confirms its write lock exactly once");
@@ -170,7 +167,7 @@ static class HttpChecks
     private static async Task LocalEndpoints()
     {
         var cloud = new NoProfiles();
-        var profiles = new UgsProfiles(cloud);
+        var profiles = new UgsProfiles(cloud, TimeProvider.System);
         var parties = new PartyStore(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         { ["PvpMatchmaking:ServerAddress"] = "127.0.0.1", ["PvpMatchmaking:ServerCount"] = "1" }).Build(), TimeProvider.System);
         var tickets = new UgsTicketStore(TimeProvider.System, profiles, parties);
@@ -244,7 +241,7 @@ static class HttpChecks
         var clock = new HealthClock();
         var cloud = new LeaseCloud();
         var options = new UgsBridgeOptions { Enabled = true, EnvironmentName = "development" };
-        var profiles = new UgsProfiles(cloud);
+        var profiles = new UgsProfiles(cloud, clock);
         var parties = new PartyStore(new ConfigurationBuilder().Build(), clock);
         using var worker = new UgsPvpWorker(options, cloud, profiles, new UgsTicketStore(clock, profiles, parties),
             parties, clock, NullLogger<UgsPvpWorker>.Instance);
@@ -333,7 +330,7 @@ static class HttpChecks
         using var outbound = new HttpClient(wire) { Timeout = TimeSpan.FromSeconds(10) };
         var options = new UgsBridgeOptions { Enabled = true };
         var cloud = new UgsCloudStore(outbound, options, TimeProvider.System);
-        var profiles = new UgsProfiles(cloud);
+        var profiles = new UgsProfiles(cloud, TimeProvider.System);
         var parties = new PartyStore(new ConfigurationBuilder().Build(), TimeProvider.System);
         var worker = new UgsPvpWorker(options, cloud, profiles, new UgsTicketStore(TimeProvider.System, profiles, parties),
             parties, TimeProvider.System, NullLogger<UgsPvpWorker>.Instance);
@@ -440,12 +437,12 @@ static class HttpChecks
         }
         public Task<UgsCloudPage> ListPrivateAsync(string? after, CancellationToken cancel)
         { Calls++; return Task.FromResult(new UgsCloudPage(lease == null ? [] : [lease!], null)); }
-        public Task<JsonElement?> GetProtectedProfileAsync(string playerId, CancellationToken cancel) => throw new NotSupportedException();
+        public Task<UgsProfileData> GetProtectedProfileAsync(string playerId, CancellationToken cancel) => throw new NotSupportedException();
         public Task DeletePrivateAsync(string key, string writeLock, CancellationToken cancel) => throw new NotSupportedException();
     }
     private sealed class NoProfiles : IUgsCloudStore
     {
-        public Task<JsonElement?> GetProtectedProfileAsync(string playerId, CancellationToken cancel) => Task.FromResult<JsonElement?>(null);
+        public Task<UgsProfileData> GetProtectedProfileAsync(string playerId, CancellationToken cancel) => Task.FromResult(default(UgsProfileData));
         public Task<UgsCloudItem?> GetPrivateAsync(string key, CancellationToken cancel) => throw new NotSupportedException();
         public Task<UgsCloudPage> ListPrivateAsync(string? after, CancellationToken cancel) => throw new NotSupportedException();
         public Task<string> SetPrivateAsync(string key, object value, string? writeLock, CancellationToken cancel) => throw new NotSupportedException();

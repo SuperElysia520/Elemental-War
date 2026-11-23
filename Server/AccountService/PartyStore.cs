@@ -117,6 +117,48 @@ public sealed class PartyStore
         }
     }
 
+    public PartyView? SocialParty(string playerId)
+    {
+        lock (gate)
+        {
+            Sweep();
+            var party = Find(playerId);
+            return party == null ? null : View(party);
+        }
+    }
+
+    public HashSet<string> SocialPartyIds()
+    {
+        lock (gate) { Sweep(); return parties.Keys.ToHashSet(StringComparer.Ordinal); }
+    }
+
+    public PartyView InvitationParty(Profile actor, string target)
+    {
+        lock (gate)
+        {
+            Sweep();
+            if (Find(target) != null) throw Error("target_in_party", "对方已在队伍中。");
+            var party = Find(actor.AccountId);
+            if (party == null) return Create(actor).Party!;
+            if (party.Owner != actor.AccountId) throw Error("owner_required", "只有队长可以发送邀请。");
+            if (party.MatchId != null || party.QueuedAt != null) throw Error("party_matching", "停止匹配后才能邀请好友。");
+            if (party.Members.Count >= Capacity) throw Error("party_full", "队伍已满。");
+            return State(party, actor).Party!;
+        }
+    }
+
+    public void JoinInvitation(Profile actor, string inviter, string id)
+    {
+        lock (gate)
+        {
+            Sweep();
+            if (!parties.TryGetValue(id, out var party) || party.Owner != inviter)
+                throw Error("party_gone", "邀请的队伍已解散。");
+            if (Find(actor.AccountId)?.Id == id) return;
+            Join(actor, id);
+        }
+    }
+
     public PartyState Ready(Profile actor, bool ready)
     {
         lock (gate)

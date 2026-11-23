@@ -10,12 +10,14 @@ public struct CharacterAppearanceData : INetworkSerializable, IEquatable<Charact
     public byte hairColorId;
     public bool hat;
     public bool accessories;
+    public int wardrobeItems, wardrobeColors;
 
     public static CharacterAppearanceData Default => new CharacterAppearanceData { hat = true, accessories = true };
 
     public CharacterAppearanceData Sanitized()
     {
         var result = this;
+        if (!WardrobeItems.Valid(result.wardrobeItems, result.wardrobeColors)) { result.wardrobeItems = 0; result.wardrobeColors = 0; }
         if (result.outfitId > 2) result.outfitId = 0;
         if (result.faceId > 4) result.faceId = 0;
         if (result.clothColorId > 4) result.clothColorId = 0;
@@ -32,12 +34,15 @@ public struct CharacterAppearanceData : INetworkSerializable, IEquatable<Charact
         serializer.SerializeValue(ref hairColorId);
         serializer.SerializeValue(ref hat);
         serializer.SerializeValue(ref accessories);
+        serializer.SerializeValue(ref wardrobeItems);
+        serializer.SerializeValue(ref wardrobeColors);
     }
 
     public bool Equals(CharacterAppearanceData other) => outfitId == other.outfitId && faceId == other.faceId &&
-        clothColorId == other.clothColorId && hairColorId == other.hairColorId && hat == other.hat && accessories == other.accessories;
+        clothColorId == other.clothColorId && hairColorId == other.hairColorId && hat == other.hat && accessories == other.accessories &&
+        wardrobeItems == other.wardrobeItems && wardrobeColors == other.wardrobeColors;
     public override bool Equals(object obj) => obj is CharacterAppearanceData other && Equals(other);
-    public override int GetHashCode() => outfitId | (faceId << 2) | (clothColorId << 5) | (hairColorId << 8) | (hat ? 1024 : 0) | (accessories ? 2048 : 0);
+    public override int GetHashCode() => (wardrobeItems * 397 ^ wardrobeColors) ^ (outfitId | (faceId << 2) | (clothColorId << 5) | (hairColorId << 8) | (hat ? 1024 : 0) | (accessories ? 2048 : 0));
 }
 
 [Serializable]

@@ -555,6 +555,12 @@ public static class RifleGirlAssetBuilder
         return templates;
     }
 
+    internal static void ConfigureLobbyAppearance(GameObject character)
+    {
+        ConfigureAppearance(character.transform, character.GetComponent<Animator>(),
+            character.GetComponent<RifleGirlAppearance>(), Array.Empty<Mesh>());
+    }
+
     private static void ConfigureAppearance(Transform root, Animator animator, RifleGirlAppearance appearance, Mesh[] firstPersonTemplates)
     {
         GameObject[] outfits = { Require(root, "Jakcket"), Require(root, "Dress"), Require(root, "Sportswear") };

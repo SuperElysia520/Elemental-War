@@ -43,7 +43,7 @@ public sealed class PartyMatchmaker(PartyStore parties, AccountStore accounts, I
             using JsonDocument document = JsonDocument.Parse(text[prefix.Length..]);
             JsonElement root = document.RootElement;
             return root.GetProperty("gamePort").GetInt32() == port && root.GetProperty("canCreate").GetBoolean()
-                && !root.GetProperty("hasRoom").GetBoolean() && root.GetProperty("accountProtocolVersion").GetInt32() == 5 ? port : 0;
+                && !root.GetProperty("hasRoom").GetBoolean() && root.GetProperty("accountProtocolVersion").GetInt32() == 6 ? port : 0;
         }
         catch (Exception error) when (error is SocketException or OperationCanceledException or JsonException or KeyNotFoundException)
         { return 0; }

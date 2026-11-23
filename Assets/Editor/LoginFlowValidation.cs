@@ -143,15 +143,15 @@ public static class LoginFlowValidation
         yield return new WaitForSecondsRealtime(0.3f);
         var mvc = UnityEngine.Object.FindObjectOfType<LobbyUIRoot>();
         while (mvc.Controller == null) yield return null;
-        Check(mvc.Controller.Model.Page == LobbyPage.MainMenu, "读取成功后才显示主菜单");
+        Check(mvc.Controller.Model.Page == (mvc.homeView != null ? LobbyPage.Home : LobbyPage.MainMenu), "读取成功后才显示游戏首页");
         bool done = false, ok = false;
         CharacterAppearanceData appearance = CharacterAppearanceData.Default;
         appearance.faceId = 3;
         account.SaveProfile(appearance, PvpLoadoutData.Default, (success, error) => { done = true; ok = success; });
         while (!done) yield return null;
         Check(ok && account.Profile.appearance.faceId == 3, "当前账号的角色外观仍可保存");
-        mvc.Controller.Execute(LobbyAction.Character);
-        var customization = mvc.customizationView;
+        mvc.Controller.Execute(LobbyAction.Clothes);
+        var customization = mvc.Wardrobe;
         Check(customization != null && customization.GetComponentsInChildren<UnityEngine.UI.InputField>(true).Length == 0,
             "角色定制界面已移除注册登录输入框");
         foreach (UnityEngine.UI.Button button in customization.GetComponentsInChildren<UnityEngine.UI.Button>(true))

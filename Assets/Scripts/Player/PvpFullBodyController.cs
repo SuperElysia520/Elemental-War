@@ -3,6 +3,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.AI;
 using Cinemachine;
+using FPS.Settings;
 
 /// <summary>One humanoid skeleton for local first person and remote presentation. No extra arms renderer.</summary>
 [DefaultExecutionOrder(-90)]
@@ -27,6 +28,9 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     private readonly NetworkVariable<byte> poseState = new NetworkVariable<byte>(writePerm: NetworkVariableWritePermission.Owner);
     private readonly NetworkVariable<float> yawRecoilState = new NetworkVariable<float>(writePerm: NetworkVariableWritePermission.Owner);
     private MyInputSystem input;
+    private SettingsPlayerInput configuredInput;
+    private SettingsCrouch crouch;
+    private bool wantsFire;
     private Animator animator;
     private CharacterController controller;
     private PvpLoadoutCombat combat;
@@ -60,6 +64,9 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     private Vector3 originalCameraPosition;
     private Quaternion originalCameraRotation;
     private static PvpFullBodyController localCameraOwner;
+    public static PvpFullBodyController LocalPlayer => localCameraOwner;
+    public bool LocalControlsEnabled => controlsEnabled && Cursor.lockState == CursorLockMode.Locked;
+    public float CrosshairActivity => move.magnitude * 4f + (wantsFire ? 5f : 0f);
     private static readonly int MoveBlend = Animator.StringToHash("MoveBlend");
     private static readonly int AimingX = Animator.StringToHash("AimingX");
     private static readonly int AimingY = Animator.StringToHash("AimingY");
@@ -76,7 +83,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     public bool IsAiming => IsOwner ? aiming : (poseState.Value & 1) != 0;
     public bool IsSprinting => IsOwner ? sprinting : (poseState.Value & 2) != 0;
     public bool IsGrounded => IsOwner ? grounded : (poseState.Value & 4) != 0;
-    public Vector3 EyePosition => transform.position + Vector3.up * eyeHeight;
+    public Vector3 EyePosition => transform.position + Vector3.up * (eyeHeight - (crouch != null ? crouch.EyeDrop : 0));
     public Quaternion AimRotation => Quaternion.Euler(
         IsOwner ? pitch - viewRecoil.y : remotePitch,
         transform.eulerAngles.y + (IsOwner ? viewRecoil.x : remoteYawRecoil), 0);
@@ -90,6 +97,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     {
         animator = GetComponent<Animator>();
         controller = GetComponent<CharacterController>();
+        crouch = new SettingsCrouch(controller);
         rig = GetComponent<PvpWeaponRig>();
         combat = GetComponent<PvpLoadoutCombat>();
         animator.applyRootMotion = false;
@@ -117,7 +125,9 @@ public sealed class PvpFullBodyController : NetworkBehaviour
         if (IsOwner)
         {
             input = new MyInputSystem();
+            configuredInput = new SettingsPlayerInput(input);
             input.Enable();
+            configuredInput.Enable();
             yaw = transform.eulerAngles.y;
             ownsLocalView = true;
             localCameraOwner = this;
@@ -158,10 +168,11 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     {
         StopMovementAudio();
         if (input != null) input.Disable();
+        configuredInput?.Disable();
     }
     private void OnEnable()
     {
-        if (IsSpawned && IsOwner && input != null) input.Enable();
+        if (IsSpawned && IsOwner && input != null) { input.Enable(); configuredInput?.Enable(); }
     }
     public void SetControlEnabled(bool value)
     {
@@ -171,6 +182,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
             velocity = movementSmoothing = Vector3.zero;
             move = look = Vector2.zero;
             aiming = sprinting = false;
+            configuredInput?.Reset();
             combat?.CancelLocalInput();
             CancelActionAnimation();
             ResetMovementAudio();
@@ -189,6 +201,8 @@ public sealed class PvpFullBodyController : NetworkBehaviour
         animationState = -1;
         CancelActionAnimation();
         ResetMovementAudio();
+        configuredInput?.Reset();
+        crouch?.Apply(false);
     }
     private void Update()
     {
@@ -204,21 +218,27 @@ public sealed class PvpFullBodyController : NetworkBehaviour
                 Cursor.visible = !lockMouse;
             }
             bool active = controlsEnabled && Cursor.lockState == CursorLockMode.Locked;
+            configuredInput.Tick(active);
+            var settings = GameSettingsService.Current;
             look = active ? input.Player.Look.ReadValue<Vector2>() : Vector2.zero;
             move = active ? Vector2.ClampMagnitude(input.Player.Move.ReadValue<Vector2>(), 1f) : Vector2.zero;
             PvpSightDefinition currentSight = rig.ActiveDefinition != null
                 ? rig.ActiveDefinition.GetSight(rig.ActiveSightId) : null;
             float aimSensitivity = Mathf.Lerp(1f,
                 currentSight != null ? currentSight.fieldOfView / Mathf.Max(1f, fieldOfView) : 1f, ads);
-            yaw += look.x * sensitivity * aimSensitivity;
-            pitch = Mathf.Clamp(pitch - look.y * sensitivity * aimSensitivity, -80, 80);
+            float configuredSensitivity = sensitivity * settings.sens * Mathf.Lerp(1f, settings.ads, ads);
+            yaw += look.x * configuredSensitivity * aimSensitivity;
+            pitch = Mathf.Clamp(pitch - look.y * configuredSensitivity * aimSensitivity, -80, 80);
             transform.rotation = Quaternion.Euler(0, yaw, 0);
-            aiming = active && input.Player.IsAiming.IsPressed() && !combat.IsReloading && !combat.IsSwitching;
+            if (combat.IsReloading || combat.IsSwitching) configuredInput.CancelAim();
+            aiming = active && configuredInput.Aim && !combat.IsReloading && !combat.IsSwitching;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (!controlsEnabled && validationAiming) aiming = !combat.IsReloading && !combat.IsSwitching;
 #endif
-            bool wantsFire = active && input.Player.Fire.IsPressed();
-            sprinting = active && input.Player.IsSprint.IsPressed() && move.y > 0.1f && !aiming && !wantsFire && !combat.IsReloading;
+            wantsFire = active && input.Player.Fire.IsPressed();
+            crouch.Apply(active && configuredInput.Crouch);
+            sprinting = active && configuredInput.Sprint && !crouch.IsCrouching && move.y > 0.1f && !aiming && !wantsFire && !combat.IsReloading;
+            if (move.y <= 0.1f || aiming || wantsFire || crouch.IsCrouching || combat.IsReloading) configuredInput.CancelSprint();
             grounded = controller.isGrounded;
             if (grounded && verticalSpeed < 0) verticalSpeed = -2f;
             bool jumped = active && grounded && controller.enabled && input.Player.IsJumping.WasPressedThisFrame();
@@ -231,6 +251,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
             verticalSpeed += gravity * dt;
             var definition = rig.ActiveDefinition;
             float speed = sprinting ? sprintSpeed : walkSpeed;
+            if (crouch.IsCrouching) speed *= 0.5f;
             if (definition != null) speed *= aiming ? definition.aimMovementMultiplier : (wantsFire ? definition.fireMovementMultiplier : 1f);
             Vector3 target = (transform.right * move.x + transform.forward * move.y) * speed;
             velocity = Vector3.SmoothDamp(velocity, target, ref movementSmoothing,
@@ -250,7 +271,8 @@ public sealed class PvpFullBodyController : NetworkBehaviour
                 if (input.Player.First.WasPressedThisFrame()) combat.RequestSlot(0);
                 if (input.Player.Second.WasPressedThisFrame()) combat.RequestSlot(1);
                 if (Mouse.current != null && Mathf.Abs(Mouse.current.scroll.ReadValue().y) > 0.1f) combat.RequestSlot((byte)(combat.ActiveSlot == 0 ? 1 : 0));
-                if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame) combat.RequestReload();
+                if (configuredInput.SwitchPressed) combat.RequestSlot((byte)(combat.ActiveSlot == 0 ? 1 : 0));
+                if (configuredInput.ReloadPressed) combat.RequestReload();
                 if (Keyboard.current != null && Keyboard.current.vKey.wasPressedThisFrame) combat.RequestFireMode();
                 combat.SetTrigger(wantsFire, input.Player.Fire.WasPressedThisFrame(), aiming, AimRotation * Vector3.forward);
             }
@@ -260,7 +282,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
                 pitchState.Value = pitch - viewRecoil.y;
                 yawRecoilState.Value = viewRecoil.x;
                 moveState.Value = move;
-                poseState.Value = (byte)((aiming ? 1 : 0) | (sprinting ? 2 : 0) | (grounded ? 4 : 0));
+                poseState.Value = (byte)((aiming ? 1 : 0) | (sprinting ? 2 : 0) | (grounded ? 4 : 0) | (crouch.IsCrouching ? 8 : 0));
                 nextPoseSend = Time.unscaledTime + 0.05f;
             }
         }
@@ -270,6 +292,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
             remoteYawRecoil = Mathf.LerpAngle(remoteYawRecoil, yawRecoilState.Value, 1 - Mathf.Exp(-20 * dt));
             move = moveState.Value;
             aiming = IsAiming; sprinting = IsSprinting; grounded = IsGrounded; look = Vector2.zero;
+            crouch.Apply((poseState.Value & 8) != 0, false);
         }
         ads = Mathf.MoveTowards(ads, aiming ? 1 : 0, dt / Mathf.Max(0.04f, rig.ActiveDefinition != null ? rig.ActiveDefinition.aimDuration : 0.2f));
         cameraKick = Vector3.Lerp(cameraKick, Vector3.zero, 35f * dt);
@@ -337,6 +360,21 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     private void OnAnimatorIK(int layerIndex)
     {
         if (!IsSpawned || layerIndex != handsIkLayer || rig == null || rig.RightGrip == null || !animator.isHuman) return;
+        float footWeight = crouch.IsCrouching ? 1f : 0f;
+        animator.SetIKPositionWeight(AvatarIKGoal.LeftFoot, footWeight);
+        animator.SetIKPositionWeight(AvatarIKGoal.RightFoot, footWeight);
+        animator.SetIKRotationWeight(AvatarIKGoal.LeftFoot, footWeight);
+        animator.SetIKRotationWeight(AvatarIKGoal.RightFoot, footWeight);
+        if (crouch.IsCrouching)
+        {
+            // Keep animated foot targets in place while lowering the hips, so crouching bends
+            // the legs instead of sinking the entire character through the floor.
+            Transform leftFoot = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+            Transform rightFoot = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+            if (leftFoot != null) { animator.SetIKPosition(AvatarIKGoal.LeftFoot, leftFoot.position); animator.SetIKRotation(AvatarIKGoal.LeftFoot, leftFoot.rotation); }
+            if (rightFoot != null) { animator.SetIKPosition(AvatarIKGoal.RightFoot, rightFoot.position); animator.SetIKRotation(AvatarIKGoal.RightFoot, rightFoot.rotation); }
+            animator.bodyPosition -= Vector3.up * crouch.EyeDrop;
+        }
         Quaternion rotation = AimRotation;
         mount.SetPositionAndRotation(EyePosition + rotation * hipPosition, rotation);
         if (rig.Sight != null && ads > 0)
@@ -494,6 +532,7 @@ public sealed class PvpFullBodyController : NetworkBehaviour
     private void ReleaseLocalControl()
     {
         StopMovementAudio();
+        if (configuredInput != null) { configuredInput.Dispose(); configuredInput = null; }
         if (input != null) { input.Disable(); input.Dispose(); input = null; }
         if (!ownsLocalView) return;
         ownsLocalView = false;

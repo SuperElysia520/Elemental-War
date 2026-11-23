@@ -55,6 +55,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
     private float connectionStartedAt;
     private bool matchWasStarted;
     private bool requesting;
+    private bool refreshRequested;
     private int identityGeneration;
     private string accountId;
     [Serializable] private class JoinRequest { public string partyId; }
@@ -84,6 +85,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
         string next = profile != null ? profile.accountId : null;
         if (next == accountId) return;
         accountId = next; identityGeneration++; Party = null; Rooms = new PartyData[0]; attemptedMatchId = null;
+        refreshRequested = next != null;
         Status = profile == null ? "请先登录账号。" : "";
         Changed?.Invoke();
     }
@@ -96,6 +98,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
     public void CancelMatching() => Command("/api/party/cancel");
     public void Leave(Action<bool> completed = null) => Command("/api/party/leave", null, completed);
     public void RefreshRooms() { if (!requesting) StartCoroutine(ReadRooms()); }
+    public void RefreshParty() => refreshRequested = true;
 
     private void Command(string route, string body = null, Action<bool> completed = null)
     {
@@ -121,6 +124,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
             { success = false; Status = "创建队伍未成功，请重试。"; }
         });
         requesting = false; IsBusy = false;
+        if (success && route == "/api/party/queue" && Account.HasDirectLobby) refreshRequested = true;
         if (success && Party == null) Status = "";
         Changed?.Invoke();
         completed?.Invoke(success);
@@ -132,6 +136,7 @@ public sealed class PartyLobbyClient : MonoBehaviour
         {
             if (Account.IsAuthenticated && !requesting && !IsBusy)
             {
+                refreshRequested = false;
                 requesting = true;
                 int generation = identityGeneration;
                 yield return Account.PartyRequest("GET", "/api/party", null, (body, status, error) =>
@@ -142,7 +147,9 @@ public sealed class PartyLobbyClient : MonoBehaviour
                 if (BrowseRooms && !IsBusy) yield return ReadRooms();
                 FollowMatch();
             }
-            yield return new WaitForSecondsRealtime(10f);
+            float next = Time.realtimeSinceStartup + (Account.HasDirectLobby && Party?.state == "Matching" ? 1f : 10f);
+            yield return new WaitUntil(() => Time.realtimeSinceStartup >= next ||
+                (refreshRequested && Account.IsAuthenticated && !requesting && !IsBusy));
         }
     }
 

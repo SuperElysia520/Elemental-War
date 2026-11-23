@@ -24,13 +24,13 @@ public class MainMenuUI : UIBase<MainMenuUI>
     {
         base.Awake();
         btnEnterLobby.onClick.AddListener(ShowPVPLobbyMenu);
-        btnSinglePlayer.onClick.AddListener(ShowPVELobbyMenu);
+        if (btnSinglePlayer != null) btnSinglePlayer.gameObject.SetActive(false);
         if (btnTrainingRange != null) btnTrainingRange.onClick.AddListener(ShowCustomRoom);
         btnCustomRoom.onClick.AddListener(() =>
         {
             SceneManager.LoadScene("Game");
         });
-        btnCharacter.onClick.AddListener(ShowCharacterMenu);
+        if (btnCharacter != null) btnCharacter.gameObject.SetActive(false);
         btnClothes.onClick.AddListener(ShowCharacterMenu);
         btnSettings.onClick.AddListener(ShowTipMenu);
         btnAchievements.onClick.AddListener(ShowTipMenu);
@@ -78,15 +78,6 @@ public class MainMenuUI : UIBase<MainMenuUI>
         Exit(() => // 主菜单先播放FadeOut
         {
             TipMenuUI.instance.Enter(); // 之后提示菜单播放FadeIn
-            btnExit.gameObject.SetActive(false); // 隐藏退出按钮
-        });
-    }
-
-    private void ShowPVELobbyMenu()
-    {
-        Exit(() => // 主菜单先播放FadeOut
-        {
-            LobbyMenuUI.instance.Enter(); // 保持原有 PVE 大厅入口
             btnExit.gameObject.SetActive(false); // 隐藏退出按钮
         });
     }

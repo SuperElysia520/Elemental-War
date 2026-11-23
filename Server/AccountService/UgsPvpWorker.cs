@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -7,17 +8,28 @@ namespace Fps.AccountService;
 
 public sealed record UgsPvpLease(int Version, string Epoch, long ExpiresAt);
 public sealed record UgsPvpResponse(int Status, string Body);
+public sealed record UgsCommandTiming(string Operation, DateTimeOffset CompletedUtc, long MailboxWaitMs, long WorkerMs, int Status, string Transport);
 public sealed record UgsPvpSlot(int Version, string Epoch, string PlayerId, string RequestId, string Username,
     string Operation, JsonElement Args, long CreatedAt, long ExpiresAt, string State, UgsPvpResponse? Response);
 
 /// <summary>One Rainyun authority consumes Cloud Code-authenticated per-player mailboxes.</summary>
 public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud, UgsProfiles profiles,
-    UgsTicketStore tickets, PartyStore parties, TimeProvider clock, ILogger<UgsPvpWorker> logger) : BackgroundService
+    UgsTicketStore tickets, PartyStore parties, TimeProvider clock, ILogger<UgsPvpWorker> logger, SocialStore? social = null, DirectLobby? direct = null) : BackgroundService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    private static readonly JsonSerializerOptions SocialJson = new(JsonSerializerDefaults.Web)
+    { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string Uid, long Expires)> socialUids = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (string Fingerprint, UgsPvpResponse Response, long Expires)> completed = new(StringComparer.Ordinal);
     private long renewAt;
+    private long activeUntil;
+    private volatile UgsCommandTiming? lastRoom;
+    private volatile UgsCommandTiming? lastChat;
+    private volatile UgsCommandTiming? lastQueue;
+    public UgsCommandTiming? LastQueue => lastQueue;
+    public UgsCommandTiming? LastRoom => lastRoom;
+    public UgsCommandTiming? LastChat => lastChat;
     private long refreshAt;
     private long leaseExpiresAt;
     private volatile bool isReady;
@@ -80,7 +92,7 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(options.PollSeconds));
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            try { await ProcessOnceAsync(stoppingToken); }
+            try { await PollIfDueAsync(stoppingToken); }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
             catch (UgsCloudException error) { logger.LogWarning("UGS bridge poll unavailable; HTTP status {Status}.", error.StatusCode); }
             catch (HttpRequestException) { logger.LogWarning("UGS bridge network unavailable."); }
@@ -88,15 +100,18 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
         }
     }
 
+    public Task PollIfDueAsync(CancellationToken cancel) =>
+        Now < renewAt && Now >= activeUntil ? Task.CompletedTask : ProcessOnceAsync(cancel);
+
     public async Task ProcessOnceAsync(CancellationToken cancel)
     {
         if (!IsReady) throw new InvalidOperationException("UGS bridge has not acquired its lease.");
-        await RenewLeaseAsync(cancel);
         foreach (string key in completed.Where(x => x.Value.Expires <= Now).Select(x => x.Key).ToArray()) completed.Remove(key);
         string? after = null;
         for (int page = 0; page < 101; page++)
         {
             UgsCloudPage items = await cloud.ListPrivateAsync(after, cancel);
+            await RenewLeaseAsync(cancel, items.Results.FirstOrDefault(item => item.Key == "bridge"));
             foreach (UgsCloudItem item in items.Results)
             {
                 if (!item.Key.StartsWith("p_", StringComparison.Ordinal)) continue;
@@ -133,6 +148,11 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
             return;
         }
         if (slot.State != "pending" || slot.Response != null) return;
+        long receivedAt = Now;
+        long started = clock.GetTimestamp();
+        activeUntil = receivedAt + 30000;
+        string? command = slot.Operation == "social" && slot.Args.TryGetProperty("command", out var socialCommand)
+            && socialCommand.ValueKind == JsonValueKind.String ? socialCommand.GetString() : slot.Operation;
         string identity = slot.PlayerId + "/" + slot.RequestId;
         string fingerprint = slot.Username + "\n" + slot.Operation + "\n" + slot.Args.GetRawText();
         UgsPvpResponse response;
@@ -143,16 +163,7 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
             try
             {
                 if (completed.Count >= 5000) throw new ApiException(503, "request_limit", "匹配请求过多，请稍后重试。");
-                ValidateCommand(slot);
-                Profile actor = await profiles.LoadAsync(slot.PlayerId, slot.Username, cancel);
-                await RenewLeaseAsync(cancel);
-                if (slot.ExpiresAt <= Now) throw new ApiException(408, "request_expired", "匹配请求已超时，请重新操作。");
-                if (slot.Operation == "queue")
-                {
-                    await profiles.RefreshAsync(parties.PartyPlayerIds(actor.AccountId), cancel);
-                    parties.RefreshProfiles(profiles.GetCached, skipUnavailable: true);
-                }
-                response = ExecuteCommand(slot, actor);
+                response = await ExecutePlayerCommandAsync(slot, false, cancel);
             }
             catch (ApiException error) { response = Error(error.StatusCode, error.Code, error.Message); }
             catch (UgsCloudException) { response = Error(503, "cloud_unavailable", "云端角色资料暂不可用，请稍后重试。"); }
@@ -173,8 +184,57 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
         {
             // A failed CAS must never overwrite a newer command from this player.
             await cloud.SetPrivateAsync(item.Key, slot with { State = "done", Response = response }, item.WriteLock, cancel);
+            RecordTiming(slot.Operation, command, "mailbox", started, Math.Max(0, receivedAt - slot.CreatedAt), response.Status);
         }
         catch (UgsCloudException error) when (error.StatusCode == 409) { }
+    }
+
+    private void RecordTiming(string operation, string? command, string transport, long started, long wait, int status)
+    {
+        if (operation is not ("create" or "game-ticket" or "queue") && !(operation == "social" && command is "send" or "team-send")) return;
+        var timing = new UgsCommandTiming(command!, clock.GetUtcNow(), wait, (long)clock.GetElapsedTime(started).TotalMilliseconds, status, transport);
+        if (operation == "social") lastChat = timing;
+        else if (operation == "queue") lastQueue = timing;
+        else lastRoom = timing;
+    }
+
+    public async Task<UgsPvpResponse> ExecuteDirectAsync(UgsPvpSlot slot, CancellationToken cancel)
+    {
+        long started = clock.GetTimestamp();
+        if (!HasLiveLease) throw new ApiException(503, "bridge_unavailable", "大厅服务正在连接。");
+        UgsPvpResponse reply;
+        try { reply = await ExecutePlayerCommandAsync(slot, true, cancel); }
+        catch (ApiException error) { reply = Error(error.StatusCode, error.Code, error.Message); }
+        catch (Exception error) when (error is UgsCloudException or HttpRequestException ||
+            error is OperationCanceledException && !cancel.IsCancellationRequested)
+        { reply = Error(503, "cloud_unavailable", "云端玩家资料暂时不可用。"); }
+        string? command = slot.Operation == "social" && slot.Args.TryGetProperty("command", out var kind) &&
+            kind.ValueKind == JsonValueKind.String ? kind.GetString() : slot.Operation;
+        RecordTiming(slot.Operation, command, "direct", started, 0, reply.Status);
+        return reply;
+    }
+
+    private async Task<UgsPvpResponse> ExecutePlayerCommandAsync(UgsPvpSlot slot, bool viaDirect, CancellationToken cancel)
+    {
+        ValidateCommand(slot);
+        bool cached = (viaDirect && slot.Operation is "current" or "rooms") ||
+            (slot.Operation == "social" && slot.Args.GetProperty("command").GetString() is "sync" or "search" or "send" or "team-send");
+        Profile actor = cached ? await profiles.LoadForSocialDisplayAsync(slot.PlayerId, slot.Username, cancel)
+            : await profiles.LoadAsync(slot.PlayerId, slot.Username, cancel);
+        if (slot.Operation == "queue")
+        {
+            await profiles.RefreshAsync(parties.PartyPlayerIds(actor.AccountId).Where(id => id != actor.AccountId), cancel, concurrency: 4);
+            parties.RefreshProfiles(profiles.GetCached, skipUnavailable: true);
+        }
+        if (!viaDirect) await RenewLeaseAsync(cancel);
+        if (!HasLiveLease || slot.ExpiresAt <= Now) throw new ApiException(408, "request_expired", "大厅请求已超时，请重新操作。");
+        if (slot.Operation == "social") return await ExecuteSocialAsync(slot, actor, viaDirect, cancel);
+        if (!viaDirect && slot.Operation == "current" && direct != null)
+        {
+            var state = parties.Current(actor);
+            return new(200, JsonSerializer.Serialize(new { state.Party, state.Message, directLobby = direct.Grant(actor.AccountId, slot.Username) }, Json));
+        }
+        return ExecuteCommand(slot, actor);
     }
 
     private UgsPvpResponse ExecuteCommand(UgsPvpSlot slot, Profile actor)
@@ -201,6 +261,14 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
     {
         if (slot.Args.ValueKind != JsonValueKind.Object || Encoding.UTF8.GetByteCount(slot.Args.GetRawText()) > 4096)
             throw new ApiException(400, "invalid_request", "匹配请求格式不正确。");
+        if (slot.Operation == "social")
+        {
+            if (!slot.Args.TryGetProperty("command", out var name) || name.ValueKind != JsonValueKind.String)
+                throw new ApiException(400, "invalid_request", "社交请求参数不正确。");
+            try { SocialStore.Validate(slot.Args.Deserialize<SocialRequest>(Json)!); }
+            catch (JsonException) { throw new ApiException(400, "invalid_request", "社交请求参数不正确。"); }
+            return;
+        }
         string[] keys = slot.Args.EnumerateObject().Select(p => p.Name).ToArray();
         bool valid = slot.Operation switch
         {
@@ -212,10 +280,37 @@ public sealed class UgsPvpWorker(UgsBridgeOptions options, IUgsCloudStore cloud,
         if (!valid) throw new ApiException(400, "invalid_request", "匹配请求格式不正确。");
     }
 
-    private async Task RenewLeaseAsync(CancellationToken cancel)
+    private async Task<UgsPvpResponse> ExecuteSocialAsync(UgsPvpSlot slot, Profile actor, bool viaDirect, CancellationToken cancel)
+    {
+        if (social == null || cloud is not IUgsSocialIdentityStore identities)
+            throw new ApiException(503, "social_unavailable", "社交服务暂不可用。");
+        if (!socialUids.TryGetValue(actor.AccountId, out var identity) || identity.Expires <= Now)
+        {
+            var value = await identities.GetProtectedUidAsync(actor.AccountId, cancel);
+            string uid = actor.AccountId;
+            if (value is { } stored)
+            {
+                if (stored.ValueKind != JsonValueKind.Object || !stored.TryGetProperty("version", out var version) ||
+                    version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int format) || format != 1 ||
+                    !stored.TryGetProperty("playerId", out var owner) || owner.ValueKind != JsonValueKind.String || owner.GetString() != actor.AccountId ||
+                    !stored.TryGetProperty("uid", out var number) || number.ValueKind != JsonValueKind.Number ||
+                    !number.TryGetInt32(out int numericUid) || numericUid is < 111100001 or > 999999999)
+                    throw new ApiException(409, "uid_corrupt", "玩家 UID 资料异常。");
+                uid = numericUid.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            if (socialUids.Count >= 5000) socialUids.Clear();
+            socialUids[actor.AccountId] = identity = (uid, Now + 300_000);
+        }
+        if (!viaDirect) await RenewLeaseAsync(cancel);
+        if (!HasLiveLease || slot.ExpiresAt <= Now) throw new ApiException(408, "request_expired", "社交请求已超时，请重试。");
+        object valueToSend = social.Execute(actor, identity.Uid, slot.Args.Deserialize<SocialRequest>(Json)!, returnConversation: viaDirect);
+        return new(200, JsonSerializer.Serialize(valueToSend, valueToSend.GetType(), SocialJson));
+    }
+
+    private async Task RenewLeaseAsync(CancellationToken cancel, UgsCloudItem? observed = null)
     {
         if (Now < renewAt) return;
-        UgsCloudItem? item = await cloud.GetPrivateAsync("bridge", cancel);
+        UgsCloudItem? item = observed ?? await cloud.GetPrivateAsync("bridge", cancel);
         if (item == null || ReadLease(item.Value).Epoch != Epoch)
         {
             IsReady = false;
@@ -273,7 +368,9 @@ public static class UgsPvpEndpoints
                 status = ready ? "ok" : "degraded", service = "fps-account", apiVersion = 2,
                 ugsBridgeEnabled = true, ugsBridgeReady = ready,
                 ugsLeaseSecondsRemaining = worker.LeaseSecondsRemaining,
-                ugsEnvironment = options.EnvironmentName
+                ugsEnvironment = options.EnvironmentName,
+                lastRoom = worker.LastRoom, lastChat = worker.LastChat, lastQueue = worker.LastQueue,
+                directLobbyPort = services.GetService<DirectLobby>()?.Port
             }, statusCode: ready ? 200 : 503);
         });
     }

@@ -189,6 +189,20 @@ test("restored session without cached username gets a deterministic valid displa
   assert.equal(h.calls.writes.length, 0);
 });
 
+test("a legacy outfit can save independent garments and item colors", async () => {
+  const h = harness();
+  const request = save();
+  request.appearance = { ...appearance(), wardrobeItems: 65536 + (2 << 6) + 1, wardrobeColors: 3 << 9 };
+  assert.equal((await h.run(request)).ok, true);
+  const loaded = await h.run({ operation: "load" });
+  assert.deepEqual(loaded.profile.appearance, request.appearance);
+  for (const invalid of [{ wardrobeItems: 1 }, { wardrobeColors: 7 }, { wardrobeItems: 65538 },
+      { wardrobeItems: 0, wardrobeColors: 2 }, { wardrobeItems: 65536, wardrobeColors: 4 }]) {
+    const rejected = await h.run({ ...request, revision: 1, appearance: { ...request.appearance, ...invalid } });
+    assert.equal(rejected.code, "invalid_profile");
+  }
+});
+
 test("first save creates revision 1 without a fictional writeLock", async () => {
   const h = harness();
   const request = save();

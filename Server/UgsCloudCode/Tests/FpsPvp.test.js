@@ -158,6 +158,7 @@ test("submit writes only the authenticated player's private mailbox and returns 
   assert.deepEqual(h.calls.constructors, [{ accessToken: "server-token-private" }]);
   assert.equal(h.calls.reads.every(call => call.projectId === PROJECT && call.customId === MAILBOX && call.keys.every(key => key === "bridge" || key === keyFor(PLAYER))), true);
   assert.equal(h.calls.reads.filter(call => call.keys.includes(keyFor(PLAYER))).length >= 2, true, "first create must verify that its own request survived the unlocked upsert");
+  assert.equal(h.calls.reads.length, 2, "submit batches the lease and slot, then confirms the write");
 });
 
 test("username and args may be omitted without changing the authenticated identity", async () => {
@@ -202,6 +203,22 @@ test("authentication and service context errors fail before private SDK access",
     assert.equal(h.calls.reads.length, 0);
     assert.equal(h.calls.writes.length, 0);
   });
+});
+
+test("social commands carry only the documented fields in the authenticated player's mailbox", async () => {
+  const payload = { command: "send", target: OTHER_PLAYER, text: "来一起玩吗？", nonce: OTHER_REQUEST };
+  const accepted = harness();
+  assertPending(await accepted.run(submit("social", payload)));
+  assert.deepEqual(accepted.item().value.args, payload);
+  assert.equal(accepted.item().value.playerId, PLAYER);
+  for (const args of [{ ...payload, sender: OTHER_PLAYER }, { ...payload, text: "你".repeat(201) },
+    { command: "team-send", target: "@team", text: "你好", nonce: OTHER_REQUEST },
+    { command: "accept-invite", target: OTHER_PLAYER, nonce: "not-a-nonce" }]) {
+    const rejected = harness();
+    const result = await rejected.run(submit("social", args));
+    assert.equal(result.code, "invalid_request");
+    assert.equal(rejected.calls.writes.length, 0);
+  }
 });
 
 test("malformed params and injected authority never reach the SDK", async t => {
@@ -281,6 +298,7 @@ test("a status request reads only its own request and does not create a mailbox"
   const privateOtherBody = '{"private":"other-player-secret"}';
   h.seedSlot(done(privateOtherBody, 200, { playerId: OTHER_PLAYER }), "other-lock", OTHER_PLAYER);
   assertFailure(await h.run(status()), "request_expired");
+  assert.equal(h.calls.reads.length, 1, "status needs one Cloud Save round trip");
   assert.equal(h.calls.writes.length, 0);
   assert.equal(h.calls.reads.every(call => !call.keys.includes(keyFor(OTHER_PLAYER))), true);
   h.seedSlot(done('{"mine":true}'));

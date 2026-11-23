@@ -10,7 +10,7 @@ const MAX_SLOT_BYTES = 65536;
 const HEX_ID = /^[a-fA-F0-9]{32}$/;
 const PLAYER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const USERNAME = /^[A-Za-z0-9.@_-]{3,20}$/;
-const COMMANDS = new Set(["current", "rooms", "create", "join", "ready", "queue", "cancel", "leave", "fail", "ticket", "game-ticket"]);
+const COMMANDS = new Set(["current", "rooms", "create", "join", "ready", "queue", "cancel", "leave", "fail", "ticket", "game-ticket", "social"]);
 const FAILURE_STATUS = {
   auth_required: 401,
   invalid_request: 400,
@@ -53,7 +53,23 @@ function withinBytes(value, maximum) {
 function validateArgs(operation, args) {
   if (operation === "join") return fields(args, ["partyId"]) && validId(args.partyId);
   if (operation === "ready") return fields(args, ["ready"]) && typeof args.ready === "boolean";
+  if (operation === "social") return validateSocial(args);
   return fields(args, []);
+}
+function validateSocial(args) {
+  if (!object(args) || typeof args.command !== "string") return false;
+  const target = typeof args.target === "string" && PLAYER_ID.test(args.target);
+  const text = typeof args.text === "string" && args.text.length > 0 && args.text.length <= 200 && args.text.trim().length > 0;
+  if (args.command === "sync") return fields(args, ["command"]) ||
+    (fields(args, ["command", "target"]) && (target || args.target === "@team"));
+  if (args.command === "search") return fields(args, ["command", "text"]) && text && args.text.length <= 64;
+  if (["request", "accept", "reject", "remove", "block", "unblock"].includes(args.command))
+    return fields(args, ["command", "target"]) && target;
+  if (["send", "team-send"].includes(args.command))
+    return fields(args, ["command", "target", "text", "nonce"]) && target && text && validId(args.nonce);
+  if (["invite", "accept-invite", "decline-invite"].includes(args.command))
+    return fields(args, ["command", "target", "nonce"]) && target && validId(args.nonce);
+  return false;
 }
 function defaultUsername(playerId) {
   return "Player_" + playerId.replace(/[^A-Za-z0-9]/g, "").slice(0, 12);
@@ -72,13 +88,15 @@ function validateParams(params, playerId) {
   return { operation: params.operation, username, args: copy(args) };
 }
 
-async function readItem(api, projectId, key) {
-  const response = await api.getPrivateCustomItems(projectId, MAILBOX_ID, [key]);
+async function readItems(api, projectId, keys) {
+  const response = await api.getPrivateCustomItems(projectId, MAILBOX_ID, keys);
   if (!response || !response.data || !Array.isArray(response.data.results)) fail("service_unavailable");
-  const rows = response.data.results;
-  if (rows.length === 0) return null;
-  if (rows.length !== 1 || !object(rows[0]) || rows[0].key !== key) fail("service_unavailable");
-  return rows[0];
+  const items = new Map();
+  for (const row of response.data.results) {
+    if (!object(row) || !keys.includes(row.key) || items.has(row.key)) fail("service_unavailable");
+    items.set(row.key, row);
+  }
+  return items;
 }
 function validateLease(item, now) {
   const value = item && item.value;
@@ -135,11 +153,11 @@ module.exports = async ({ params, context, logger }) => {
     const playerId = context.playerId;
     const command = validateParams(params, playerId);
     const api = new DataApi({ accessToken: context.serviceToken });
-    const lease = validateLease(await readItem(api, context.projectId, LEASE_KEY), Date.now());
     const key = "p_" + playerId;
-    const previous = await readItem(api, context.projectId, key);
+    const items = await readItems(api, context.projectId, [LEASE_KEY, key]);
     const now = Date.now();
-    if (lease.expiresAt <= now) fail("bridge_unavailable");
+    const lease = validateLease(items.get(LEASE_KEY), now);
+    const previous = items.get(key);
     const existing = previous ? validateSlot(previous, playerId) : null;
     if (params.action === "status") {
       if (!existing) fail("request_expired");
@@ -164,7 +182,7 @@ module.exports = async ({ params, context, logger }) => {
     if (!written || !written.data || typeof written.data.writeLock !== "string" || !written.data.writeLock) fail("service_unavailable");
     // Missing-item creation has no documented create-if-absent lock. Another
     // first request may supersede this one; never deliver a different result.
-    const confirmed = await readItem(api, context.projectId, key);
+    const confirmed = (await readItems(api, context.projectId, [key])).get(key);
     if (!confirmed) fail("request_superseded");
     const current = validateSlot(confirmed, playerId);
     if (current.epoch !== lease.epoch || current.requestId !== requestId || !sameCommand(current, command)) fail("request_superseded");

@@ -2,6 +2,27 @@
 
 <!-- unity-onboarding:generated:start -->
 
+## 2026-11-18 右侧卡片按队伍状态自动上移与下移
+
+- 根据用户补充要求，Operations 使用原生 VerticalLayoutGroup 顶部排列两个现有卡片，不新增运行时布局脚本。无队伍时模式/匹配卡片上移到右上方；创建或加入成功后显示队伍卡片，模式/匹配卡片下移，间距24；离队/解散后恢复顶部。
+- 创建等待或失败保持上移状态，避免未确认队伍时预留空白。现有按钮与好友、聊天接线不变，修改前场景和 Prefab 继续按 split-cards-* 备份。
+- 61项真实场景运行检查通过，无新增错误；检查包括顶部位置、建队/加入后的排列与间距、失败后的位置、离队后上移及真实鼠标射线。运行效果图为 `runtime-homepage.png` 与 `runtime-party-created.png`。
+
+## 2026-11-18 右侧队伍卡片与模式卡片拆分
+
+- 用户要求把首页右侧上方的队伍区与下方的模式/地图/匹配区拆成两个独立整体。现为 `UnifiedHome/Stage/Operations/SquadCard` 与 `MatchCard`，保留蓝白样式与独立背景，间隔24个设计像素。
+- SquadCard 只在实际 Party 存在时显示；无队伍、创建等待、创建失败及离队后隐藏，不再以本地玩家填充一个尚未创建的“队伍1/5”。创建或加入确认后再显示真实成员。
+- MatchCard 始终显示；新增独立“创建队伍”按钮，支持先建队再邀请，原有开始匹配、房间、好友与聊天接线保留。离队按钮移入队伍卡右上方。
+- 编辑器内针对现有 Prefab 控件做重组，未重建大厅；操作前完整场景与Prefab备份在 `tmp/UnifiedLobby20261118/before/split-cards-*`。18项资源检查、61项真实场景离线运行检查通过，无新增运行错误；运行截图为 `runtime-homepage.png` 与 `runtime-party-created.png`。
+
+## 2026-11-18 蓝白 A 方案：主菜单与大厅合并
+
+- 用户选择蓝白黄 A 参考图，要求合并初始主菜单和大厅并取消单机模式。正式入口现为 `Login/LoadingPanel → GameLobby/UnifiedHome → GamePVP → UnifiedHome`，没有额外 MainMenu 或 Party 页面跳转。
+- 新 `UnifiedHome.prefab`、`TrainingStation.prefab`、私有中文字体和待机 IK 控制器位于 `Assets/Resource/UI/UnifiedLobby`。首页含账号身份、真实 3D 角色、五人队伍、模式导航、匹配、房间及角色/服装/武器与设置入口；UI 控件和背景几何体均可编辑。
+- 沿用 MVC 和既有账号/匹配服务。无队伍的“开始匹配”确认建队后直接排队；已有队伍在同屏切换匹配、取消、准备和离队状态。子页面直接返回 Home，Escape 请求退出确认。Pve 的旧枚举值保留兼容序列化，但菜单不绑定、不显示、不再处理单机开局。
+- 邮件/好友/世界频道与训练靶场沿用未开放提示；此轮没有新增其后端。原未保存场景已完整备份到 `tmp/UnifiedLobby20261118/before`；没有回退用户已有设置、个人资料、配装或其他源代码修改。
+- 资源验证及真实 Login/GameLobby 离线运行验证见 `tmp/UnifiedLobby20261118`；15 项资源检查、55 项运行交互和原 UGS 103 项账号/组队回归通过，无新增错误；原设置资源验证通过。另检查 1920×1080、1280×1024、2560×1080 的 UI 与角色构图。实际运行图在 `output/ui-references/merged-home-20261118/unity-homepage-implemented-v1.png`，编辑器恢复停止状态的 GameLobby。完整说明见 [UnifiedLobbyUI.md](UnifiedLobbyUI.md)。以下旧 MainMenu/Home/Party 分离的描述属于历史实现。
+
 ## 2026-11-12 首次游戏名称与组队名称同步
 
 - 用户新增的 InitialNamePanel.prefab 已接入 Login。读取云端档案后，UGS 账号 personal.displayName 为空才进入 InitialName 状态；1–20字名称保存到既有 fps_personal_v1 成功后才加载 GameLobby。失败保留输入、提示重试，请求中禁用重复提交。已有云端名称的账号重复登录/换设备不再提示；登录用户名和 UID 不变。SelfHosted 流程保持原有行为。

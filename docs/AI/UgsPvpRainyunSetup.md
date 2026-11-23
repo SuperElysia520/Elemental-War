@@ -2,6 +2,10 @@
 
 注册、登录和角色档案由 UGS 托管。雨云运行游戏战斗专服，以及一个只供本机使用的 PvP worker；worker 主动通过 HTTPS 访问 UGS，不向玩家开放 HTTP 接口。客户端通过 Cloud Code `FpsPvp` 发送组队和匹配命令。
 
+大厅好友、私聊、队聊和组队邀请复用同一个 `FpsPvp` 脚本和雨云 worker。启用时先备份 worker 数据目录，更新雨云的 `AccountService` 发布文件并重启现有服务，再在同一 UGS 环境重新发布 `FpsPvp.js`，最后分发新客户端。`FpsPvp` 的五个 Dashboard 参数保持原样。服务端从 Protected Cloud Save 读取数字 UID。玩家首次进入新版大厅后出现在搜索目录中。
+
+好友关系、黑名单和每个会话最近 40 条私聊消息存放在 `AccountStorePath` 同目录的 `social-v1.json`。可通过 `SocialStorePath` 指定持久化路径。升级时保留该文件和目录写权限。每次打开会话显示最近 16 条消息。队聊随队伍生命周期保留在 worker 内存。邀请有效期为两分钟，由服务端在接受时检查好友关系、原队伍和可用位置。
+
 2026-10-20 本机已生成交付包：`Builds/UgsPvp/Rainyun-UgsPvp.zip`（含专服、独立 Windows x64 bridge、云脚本及“先读我.md”）与 `Builds/UgsPvp/WindowsClient.zip`。首次部署可直接使用这两个包，按包内“先读我.md”操作；下面的源码发布命令供以后更新使用。修改代码后需要同步重建两端与 bridge，不能继续沿用旧包。
 
 本流程**不需要域名、IP HTTPS 证书、TCP 80/443 入站规则**。不要在雨云安全组或 Windows 防火墙向公网开放 5080。游戏 UDP 端口沿用已有配置；默认 7777–7786，发现查询端口为它们加 41000，只用于本机发现。

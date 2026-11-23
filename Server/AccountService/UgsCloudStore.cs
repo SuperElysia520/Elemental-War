@@ -35,6 +35,7 @@ public sealed class UgsBridgeOptions
 
 public sealed record UgsCloudItem(string Key, JsonElement Value, string WriteLock);
 public sealed record UgsCloudPage(UgsCloudItem[] Results, string? After);
+public readonly record struct UgsProfileData(JsonElement? Profile, JsonElement? Personal);
 public sealed class UgsCloudException(int statusCode) : Exception("UGS Cloud Save request failed.")
 {
     public int StatusCode { get; } = statusCode;
@@ -46,16 +47,16 @@ public interface IUgsCloudStore
     Task<UgsCloudPage> ListPrivateAsync(string? after, CancellationToken cancel);
     Task<string> SetPrivateAsync(string key, object value, string? writeLock, CancellationToken cancel);
     Task DeletePrivateAsync(string key, string writeLock, CancellationToken cancel);
-    Task<JsonElement?> GetProtectedProfileAsync(string playerId, CancellationToken cancel);
+    Task<UgsProfileData> GetProtectedProfileAsync(string playerId, CancellationToken cancel);
 }
 
-public interface IUgsPersonalCloudStore
+public interface IUgsSocialIdentityStore
 {
-    Task<JsonElement?> GetProtectedPersonalAsync(string playerId, CancellationToken cancel);
+    Task<JsonElement?> GetProtectedUidAsync(string playerId, CancellationToken cancel);
 }
 
 /// <summary>Fixed official HTTPS destinations; credentials never reach client or Rainyun public HTTP.</summary>
-public sealed class UgsCloudStore(HttpClient http, UgsBridgeOptions options, TimeProvider clock) : IUgsCloudStore, IUgsCareerCloudStore, IUgsPersonalCloudStore
+public sealed class UgsCloudStore(HttpClient http, UgsBridgeOptions options, TimeProvider clock) : IUgsCloudStore, IUgsCareerCloudStore, IUgsSocialIdentityStore
 {
     private const string CloudHost = "https://cloud-save.services.api.unity.com";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -106,12 +107,26 @@ public sealed class UgsCloudStore(HttpClient http, UgsBridgeOptions options, Tim
             "?writeLock=" + Uri.EscapeDataString(writeLock), null, cancel);
     }
 
-    public Task<JsonElement?> GetProtectedProfileAsync(string playerId, CancellationToken cancel)
-        => GetProtectedItemAsync(playerId, "fps_profile_v1", cancel);
-    public Task<JsonElement?> GetProtectedPersonalAsync(string playerId, CancellationToken cancel)
-        => GetProtectedItemAsync(playerId, "fps_personal_v1", cancel);
-    private async Task<JsonElement?> GetProtectedItemAsync(string playerId, string key, CancellationToken cancel)
+    public async Task<UgsProfileData> GetProtectedProfileAsync(string playerId, CancellationToken cancel)
     {
+        string path = $"/v1/data/projects/{options.ProjectId}/players/{Uri.EscapeDataString(playerId)}/protected/items?keys=fps_profile_v1&keys=fps_personal_v1";
+        using JsonDocument doc = await SendAsync(HttpMethod.Get, path, null, cancel);
+        JsonElement? profile = null, personal = null;
+        foreach (var row in ReadItems(doc.RootElement))
+        {
+            switch (row.Key)
+            {
+                case "fps_profile_v1" when !profile.HasValue: profile = row.Value; break;
+                case "fps_personal_v1" when !personal.HasValue: personal = row.Value; break;
+                default: throw new UgsCloudException(502);
+            }
+        }
+        return new(profile, personal);
+    }
+
+    public async Task<JsonElement?> GetProtectedUidAsync(string playerId, CancellationToken cancel)
+    {
+        const string key = "fps_uid_v1";
         string path = $"/v1/data/projects/{options.ProjectId}/players/{Uri.EscapeDataString(playerId)}/protected/items?keys={key}";
         using JsonDocument doc = await SendAsync(HttpMethod.Get, path, null, cancel);
         UgsCloudItem[] rows = ReadItems(doc.RootElement);

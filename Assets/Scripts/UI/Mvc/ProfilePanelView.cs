@@ -78,7 +78,11 @@ namespace FPS.UI
             currentProfile = profile;
             base.Render(profile, catalog, message, busy);
             if (overviewName != null) overviewName.text = profile != null ? profile.DisplayName : "";
-            if (overviewUid != null) overviewUid.text = profile != null ? AccountUid.Format(profile.uid, profile.accountId) : "";
+            if (overviewUid != null)
+            {
+                string id = profile != null ? AccountUid.Format(profile.uid, profile.accountId) : "";
+                overviewUid.text = string.IsNullOrEmpty(id) ? "" : "UID " + id;
+            }
             if (overviewAvatar != null) overviewAvatar.Show(profile != null ? profile.avatarId : (byte)255, catalog);
             byte gender = profile?.personal?.gender ?? 0;
             if (genderIcon != null) { genderIcon.sprite = gender == 1 ? maleIcon : gender == 2 ? femaleIcon : null; genderIcon.enabled = genderIcon.sprite != null; }

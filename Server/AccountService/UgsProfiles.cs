@@ -3,38 +3,54 @@ using System.Text.RegularExpressions;
 
 namespace Fps.AccountService;
 
-public sealed class UgsProfiles(IUgsCloudStore cloud)
+public sealed class UgsProfiles(IUgsCloudStore cloud, TimeProvider clock)
 {
     private readonly object gate = new();
-    private readonly Dictionary<string, (Profile Profile, string Username)> cache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (Profile Profile, string Username, DateTimeOffset LoadedAt)> cache = new(StringComparer.Ordinal);
     private readonly HashSet<string> invalid = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim[] readers = Enumerable.Range(0, 64).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public static bool IsPlayerId(string value) => Regex.IsMatch(value, "^[A-Za-z0-9_-]{1,64}$", RegexOptions.CultureInvariant);
     public static bool IsUsername(string value) => Regex.IsMatch(value, "^[A-Za-z0-9.@_-]{3,20}$", RegexOptions.CultureInvariant);
 
+    public Task<Profile> LoadForSocialDisplayAsync(string playerId, string username, CancellationToken cancel)
+    {
+        lock (gate)
+        {
+            if (!invalid.Contains(playerId) && cache.TryGetValue(playerId, out var entry) &&
+                entry.Username == username && entry.LoadedAt.AddSeconds(30) > clock.GetUtcNow())
+                return Task.FromResult(entry.Profile);
+        }
+        return LoadAsync(playerId, username, cancel);
+    }
+
     public async Task<Profile> LoadAsync(string playerId, string username, CancellationToken cancel)
     {
         if (!IsPlayerId(playerId) || !IsUsername(username)) throw new ApiException(400, "invalid_profile", "玩家资料参数无效。");
-        JsonElement? data = await cloud.GetProtectedProfileAsync(playerId, cancel);
+        var reader = readers[(uint)StringComparer.Ordinal.GetHashCode(playerId) % readers.Length];
+        await reader.WaitAsync(cancel);
+        try { return await ReadProfileAsync(playerId, username, cancel); }
+        finally { reader.Release(); }
+    }
+
+    private async Task<Profile> ReadProfileAsync(string playerId, string username, CancellationToken cancel)
+    {
+        var data = await cloud.GetProtectedProfileAsync(playerId, cancel);
         Profile value;
         try
         {
-            value = data == null ? new(playerId, username, 0, new Appearance(), new Loadout()) : Parse(data.Value, playerId);
-            if (cloud is IUgsPersonalCloudStore personalCloud)
+            value = data.Profile == null ? new(playerId, username, 0, new Appearance(), new Loadout()) : Parse(data.Profile.Value, playerId);
+            if (data.Personal is JsonElement personal)
             {
-                var personal = await personalCloud.GetProtectedPersonalAsync(playerId, cancel);
-                if (personal != null)
-                {
-                    RequireFields(personal.Value, "revision", "personal");
-                    if (!Integer(personal.Value.GetProperty("revision"), int.MaxValue)) throw new JsonException("Invalid personal revision.");
-                    var details = personal.Value.GetProperty("personal");
-                    RequireFields(details, "displayName", "gender", "signature");
-                    if (details.GetProperty("displayName").ValueKind != JsonValueKind.String || details.GetProperty("signature").ValueKind != JsonValueKind.String ||
-                        !Integer(details.GetProperty("gender"), 2)) throw new JsonException("Invalid personal details.");
-                    var parsed = details.Deserialize<PersonalProfile>(Json);
-                    if (parsed == null || !parsed.IsValid) throw new JsonException("Invalid personal details.");
-                    value = value with { Personal = parsed, PersonalRevision = personal.Value.GetProperty("revision").GetInt32() };
-                }
+                RequireFields(personal, "revision", "personal");
+                if (!Integer(personal.GetProperty("revision"), int.MaxValue)) throw new JsonException("Invalid personal revision.");
+                var details = personal.GetProperty("personal");
+                RequireFields(details, "displayName", "gender", "signature");
+                if (details.GetProperty("displayName").ValueKind != JsonValueKind.String || details.GetProperty("signature").ValueKind != JsonValueKind.String ||
+                    !Integer(details.GetProperty("gender"), 2)) throw new JsonException("Invalid personal details.");
+                var parsed = details.Deserialize<PersonalProfile>(Json);
+                if (parsed == null || !parsed.IsValid) throw new JsonException("Invalid personal details.");
+                value = value with { Personal = parsed, PersonalRevision = personal.GetProperty("revision").GetInt32() };
             }
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException or FormatException or OverflowException or ApiException)
@@ -42,7 +58,7 @@ public sealed class UgsProfiles(IUgsCloudStore cloud)
             lock (gate) invalid.Add(playerId);
             throw new ApiException(409, "profile_corrupt", "云端存档格式异常，已停止匹配，请联系管理员。");
         }
-        lock (gate) { cache[playerId] = (value, value.Username); invalid.Remove(playerId); }
+        lock (gate) { cache[playerId] = (value, value.Username, clock.GetUtcNow()); invalid.Remove(playerId); }
         return value;
     }
 
@@ -55,14 +71,15 @@ public sealed class UgsProfiles(IUgsCloudStore cloud)
         }
     }
 
-    public async Task RefreshAsync(IEnumerable<string> playerIds, CancellationToken cancel)
+    public Task RefreshAsync(IEnumerable<string> playerIds, CancellationToken cancel, int concurrency = 1)
     {
-        foreach (string playerId in playerIds.Distinct(StringComparer.Ordinal))
+        return Parallel.ForEachAsync(playerIds.Distinct(StringComparer.Ordinal),
+            new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = cancel }, async (playerId, token) =>
         {
             string? username;
             lock (gate) username = cache.TryGetValue(playerId, out var entry) ? entry.Username : null;
-            if (username == null) continue;
-            try { await LoadAsync(playerId, username, cancel); }
+            if (username == null) return;
+            try { await LoadAsync(playerId, username, token); }
             catch (Exception error) when (error is ApiException or UgsCloudException or HttpRequestException ||
                 (error is OperationCanceledException && !cancel.IsCancellationRequested))
             {
@@ -70,7 +87,7 @@ public sealed class UgsProfiles(IUgsCloudStore cloud)
                 // than aborting refresh/matchmaking for every other party.
                 lock (gate) invalid.Add(playerId);
             }
-        }
+        });
     }
 
     public static Profile Parse(JsonElement value, string expectedId)
@@ -81,7 +98,12 @@ public sealed class UgsProfiles(IUgsCloudStore cloud)
             !Integer(value.GetProperty("revision"), int.MaxValue) || !Integer(value.GetProperty("avatarId"), 31) ||
             value.GetProperty("match").ValueKind != JsonValueKind.Null) throw new JsonException("Invalid profile.");
         JsonElement appearance = value.GetProperty("appearance"), loadout = value.GetProperty("loadout");
-        RequireFields(appearance, "outfitId", "faceId", "clothColorId", "hairColorId", "hat", "accessories");
+        if (appearance.TryGetProperty("wardrobeItems", out var items))
+        {
+            RequireFields(appearance, "outfitId", "faceId", "clothColorId", "hairColorId", "hat", "accessories", "wardrobeItems", "wardrobeColors");
+            if (!Integer(items, 131071) || !Integer(appearance.GetProperty("wardrobeColors"), 16777215)) throw new JsonException("Invalid wardrobe.");
+        }
+        else RequireFields(appearance, "outfitId", "faceId", "clothColorId", "hairColorId", "hat", "accessories");
         RequireFields(loadout, "primaryWeaponId", "primarySightId", "sidearmSightId");
         if (!Integer(appearance.GetProperty("outfitId"), 2) || !Integer(appearance.GetProperty("faceId"), 4) ||
             !Integer(appearance.GetProperty("clothColorId"), 4) || !Integer(appearance.GetProperty("hairColorId"), 3) ||

@@ -1402,7 +1402,7 @@ MonoBehaviour:
   - button: {fileID: 6031359661916083881}
     action: 14
   - button: {fileID: 4592858897478174406}
-    action: 14
+    action: 29
   playerName: {fileID: 0}
   status: {fileID: 4059019442801852522}
   uid: {fileID: 0}

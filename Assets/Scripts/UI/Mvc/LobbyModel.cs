@@ -3,20 +3,21 @@ using System.Collections.Generic;
 
 namespace FPS.UI
 {
-    public enum LobbyPage { MainMenu, Home, Party, Rooms, CustomRoom, Customization, Profile }
+    public enum LobbyPage { MainMenu, Home, Party, Rooms, CustomRoom, Customization, Profile, Settings, Wardrobe }
     public enum LobbyAction
     {
         Back, Multiplayer, Pve, CustomPvp, Character, Clothes, Loadout, Profile,
         CreateParty, Rooms, RefreshRooms, Primary, LeaveParty, Exit, Placeholder,
         SaveProfile, ReloadProfile, CreateRoom, JoinRoom, RefreshCustomRooms, StartRoom, LeaveRoom,
-        SelectRed, SelectBlue, SelectCharacter, ProfileOverview, ProfileInformation, Avatar, CloseAvatarPicker
+        SelectRed, SelectBlue, SelectCharacter, ProfileOverview, ProfileInformation, Avatar, CloseAvatarPicker, Settings,
+        Training, Friends, Chat
     }
 
     /// <summary>Scene-local navigation state. Account and party data remain owned by their services.</summary>
     public sealed class LobbyModel
     {
         private readonly Stack<LobbyPage> history = new Stack<LobbyPage>();
-        public LobbyPage Page { get; private set; } = LobbyPage.MainMenu;
+        public LobbyPage Page { get; private set; } = LobbyPage.Home;
         public string Status { get; set; } = "";
         public bool IsBusy { get; set; }
         public bool ShowProfileInformation { get; set; }
@@ -27,6 +28,7 @@ namespace FPS.UI
 
         public void Navigate(LobbyPage page, bool remember = true)
         {
+            page = Normalize(page);
             if (Page == page) return;
             if (remember) history.Push(Page);
             Page = page;
@@ -34,14 +36,17 @@ namespace FPS.UI
         }
         public void Reset(LobbyPage page)
         {
-            history.Clear(); Page = page; Changed?.Invoke();
+            history.Clear(); Page = Normalize(page); Changed?.Invoke();
         }
         public void Back()
         {
-            Page = history.Count > 0 ? history.Pop() : LobbyPage.MainMenu;
+            Page = history.Count > 0 ? Normalize(history.Pop()) : LobbyPage.Home;
             Changed?.Invoke();
         }
         public void Notify() => Changed?.Invoke();
+        // Keep serialized enum ordinals compatible with older prefabs and callers.
+        // The initial menu and party are now states of the same homepage.
+        private static LobbyPage Normalize(LobbyPage page) => page == LobbyPage.MainMenu || page == LobbyPage.Party ? LobbyPage.Home : page;
     }
 
     public sealed class CustomizationModel
@@ -50,6 +55,8 @@ namespace FPS.UI
         public PvpLoadoutData Loadout { get; private set; } = PvpLoadoutData.Default;
         private CharacterAppearanceData savedAppearance;
         private PvpLoadoutData savedLoadout;
+        public CharacterAppearanceData SavedAppearance => savedAppearance;
+        public void Dress(CharacterAppearanceData appearance) => Appearance = WardrobeItems.SameClothing(appearance,savedAppearance) ? savedAppearance : appearance.Sanitized();
         public bool IsDirty => !Appearance.Equals(savedAppearance) || !Loadout.Equals(savedLoadout);
         public void Load(PlayerProfileData profile)
         {

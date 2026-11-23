@@ -2,6 +2,8 @@
 
 注册、登录、切换账号全部由 `Login` 场景负责。UI 由开发者手工制作，不生成面板或调整布局。
 
+2026-11-18：读档后的入口已改为 `GameLobby/UnifiedHome`，主菜单和大厅合并，不再需要“进入大厅”的中转按钮；Login 的表单、注册、初次命名和 LoadingPanel 流程保持现有实现。见 [UnifiedLobbyUI.md](UnifiedLobbyUI.md)。
+
 2026-10-20：当前资源默认选择 **UnityGamingServices**。控制台开通、`FpsProfile` 脚本发布和环境设置见 [UGS 配置指南](UgsBackendSetup.md)。UGS 模式不需要旧账号服务的公网地址，用户名密码由 Authentication 管理，角色档案保存在 Cloud Save Protected，修改经 Cloud Code 校验。旧 SelfHosted 模式保留用于历史服务和本机回归测试。
 
 ## 已接入的流程

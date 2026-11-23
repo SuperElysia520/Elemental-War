@@ -79,7 +79,7 @@ sealed class TestCloud : IUgsCloudStore, IUgsCareerCloudStore
     public Task<UgsCloudPage> ListPrivateAsync(string? after, CancellationToken cancel) => throw new NotSupportedException();
     public Task<string> SetPrivateAsync(string key, object value, string? writeLock, CancellationToken cancel) => throw new NotSupportedException();
     public Task DeletePrivateAsync(string key, string writeLock, CancellationToken cancel) => throw new NotSupportedException();
-    public Task<JsonElement?> GetProtectedProfileAsync(string playerId, CancellationToken cancel) => throw new NotSupportedException();
+    public Task<UgsProfileData> GetProtectedProfileAsync(string playerId, CancellationToken cancel) => throw new NotSupportedException();
 }
 sealed class TestEnvironment : IWebHostEnvironment
 {

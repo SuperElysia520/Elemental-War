@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="UgsBridge/**/*.cs;UgsHttp/**/*.cs" />
+    <Compile Remove="UgsBridge/**/*.cs;UgsHttp/**/*.cs;Career/**/*.cs" />
     <ProjectReference Include="../AccountService.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

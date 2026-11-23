@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Cinemachine;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using FPS.Settings;
 
 /// <summary>
 /// 玩家控制器（第一人称）
@@ -145,6 +146,9 @@ public class PlayerController : SingleMonoBase<PlayerController>
 
     #region 玩家输入相关
     private MyInputSystem input; // 输入系统
+    private SettingsPlayerInput configuredInput;
+    private SettingsCrouch configuredCrouch;
+    private PlayerModel crouchModel;
     [HideInInspector] public Vector2 moveInput; // 移动输入
     [HideInInspector] public bool isSprint; // 冲刺输入
     [HideInInspector] public bool isAiming; // 瞄准输入
@@ -174,6 +178,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
     {
         base.Awake();
         input = new MyInputSystem();
+        configuredInput = new SettingsPlayerInput(input);
     }
 
     void Start()
@@ -214,26 +219,39 @@ public class PlayerController : SingleMonoBase<PlayerController>
             return;
 
         #region 更新玩家输入
-        moveInput = input.Player.Move.ReadValue<Vector2>().normalized;
+        bool inputActive = Cursor.lockState == CursorLockMode.Locked;
+        configuredInput.Tick(inputActive);
+        if (crouchModel != currentPlayerModel)
+        {
+            configuredCrouch?.Apply(false, false);
+            crouchModel = currentPlayerModel;
+            configuredCrouch = new SettingsCrouch(currentPlayerModel.cc);
+        }
+        configuredCrouch.Apply(inputActive && configuredInput.Crouch);
+        moveInput = inputActive ? input.Player.Move.ReadValue<Vector2>().normalized : Vector2.zero;
         PlayerWeapon currentWeapon = currentPlayerModel.weapon;
-        if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+        if (inputActive && configuredInput.ReloadPressed)
             TryReload();
         bool weaponReloading = currentWeapon != null && currentWeapon.IsReloading;
-        bool sprintPressed = input.Player.IsSprint.IsPressed();
+        bool sprintPressed = configuredInput.Sprint;
         bool aimPressedThisFrame = input.Player.IsAiming.WasPressedThisFrame();
-        isAiming = input.Player.IsAiming.IsPressed() && !weaponReloading;
-        isJumping = input.Player.IsJumping.triggered;
-        isFire = input.Player.Fire.IsPressed() && !weaponReloading;
+        if (weaponReloading) configuredInput.CancelAim();
+        isAiming = inputActive && configuredInput.Aim && !weaponReloading;
+        isJumping = inputActive && input.Player.IsJumping.triggered;
+        isFire = inputActive && input.Player.Fire.IsPressed() && !weaponReloading;
         // CS 式射击不允许边奔跑边保持冲刺：开镜/开火会终止冲刺，且只允许向前冲刺。
-        isSprint = sprintPressed && moveInput.y > 0.1f && !isAiming && !isFire && !weaponReloading;
+        isSprint = inputActive && sprintPressed && !configuredCrouch.IsCrouching && moveInput.y > 0.1f && !isAiming && !isFire && !weaponReloading;
+        if (moveInput.y <= 0.1f || isAiming || isFire || configuredCrouch.IsCrouching || weaponReloading) configuredInput.CancelSprint();
         if (isJumping && currentPlayerModel.cc != null && currentPlayerModel.cc.isGrounded)
             PlayMovementOneShot(jumpSound, jumpVolume, 1.02f);
         #endregion
 
         #region 视角（鼠标 delta）
-        Vector2 look = input.Player.Look.ReadValue<Vector2>();
-        yaw += look.x * mouseSensitivity;
-        pitch = Mathf.Clamp(pitch - look.y * mouseSensitivity, pitchMin, pitchMax);
+        Vector2 look = inputActive ? input.Player.Look.ReadValue<Vector2>() : Vector2.zero;
+        var settings = GameSettingsService.Current;
+        float configuredSensitivity = mouseSensitivity * settings.sens * (isAiming ? settings.ads : 1f);
+        yaw += look.x * configuredSensitivity;
+        pitch = Mathf.Clamp(pitch - look.y * configuredSensitivity, pitchMin, pitchMax);
 
         // 射击期间不自动回正；停火稍微延迟后才恢复，玩家可以反向移动鼠标压枪。
         float returnT = 1f - Mathf.Exp(-recoilReturnSpeed * Time.deltaTime);
@@ -258,6 +276,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
         localMovement = currentPlayerModel.transform.InverseTransformDirection(worldMovement);
         // 外部速度驱动水平移动（OnAnimatorMove 读取）
         float speed = isSprint ? currentPlayerModel.sprintSpeed : currentPlayerModel.moveSpeed;
+        if (configuredCrouch.IsCrouching) speed *= 0.5f;
         currentPlayerModel.externalMoveVelocity = worldMovement * speed;
         #endregion
 
@@ -490,7 +509,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
     private Vector3 GetCurrentEyePosition()
     {
         return currentPlayerModel != null
-            ? currentPlayerModel.transform.position + Vector3.up * eyeHeight
+              ? currentPlayerModel.transform.position + Vector3.up * (eyeHeight - (configuredCrouch != null ? configuredCrouch.EyeDrop : 0))
             : (mainCamera != null ? mainCamera.transform.position : transform.position);
     }
 
@@ -1020,6 +1039,7 @@ public class PlayerController : SingleMonoBase<PlayerController>
     private void OnEnable()
     {
         input.Enable();
+        configuredInput?.Enable();
     }
 
     private void OnDisable()
@@ -1027,6 +1047,8 @@ public class PlayerController : SingleMonoBase<PlayerController>
         CancelQueuedAutoReload();
         StopMovementAudio();
         input.Disable();
+        configuredInput?.Disable();
+        configuredCrouch?.Apply(false, false);
         if (pvpCrosshair != null)
             pvpCrosshair.SetActive(pvpCrosshairInitialActive);
         if (pvpCrosshairPoint != null)
@@ -1039,5 +1061,12 @@ public class PlayerController : SingleMonoBase<PlayerController>
         cameraKickbackImpulse = 0f;
         if (viewmodel != null)
             viewmodel.ResetPvpWeaponRecoil();
+    }
+
+    protected override void OnDestroy()
+    {
+        configuredInput?.Dispose();
+        input?.Dispose();
+        base.OnDestroy();
     }
 }

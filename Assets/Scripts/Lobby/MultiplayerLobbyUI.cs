@@ -42,7 +42,7 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
     {
         if (btnStartGame != null) btnStartGame.onClick.AddListener(StartParty);
         if (btnRoomList != null) btnRoomList.onClick.AddListener(OpenRooms);
-        if (btnCharacter != null) btnCharacter.onClick.AddListener(OpenCustomization);
+        if (btnCharacter != null) btnCharacter.gameObject.SetActive(false);
         if (btnClothes != null) btnClothes.onClick.AddListener(OpenCustomization);
         if (btnLoadout != null) btnLoadout.onClick.AddListener(OpenCustomization);
         if (btnAccount != null) btnAccount.onClick.AddListener(OpenCustomization);
@@ -76,7 +76,6 @@ public sealed class MultiplayerLobbyUI : MonoBehaviour
         UnbindEvents();
         if (btnStartGame != null) btnStartGame.onClick.RemoveListener(StartParty);
         if (btnRoomList != null) btnRoomList.onClick.RemoveListener(OpenRooms);
-        if (btnCharacter != null) btnCharacter.onClick.RemoveListener(OpenCustomization);
         if (btnClothes != null) btnClothes.onClick.RemoveListener(OpenCustomization);
         if (btnLoadout != null) btnLoadout.onClick.RemoveListener(OpenCustomization);
         if (btnAccount != null) btnAccount.onClick.RemoveListener(OpenCustomization);

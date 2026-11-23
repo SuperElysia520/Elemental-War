@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Fps.AccountService;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -18,11 +19,14 @@ static class BridgeTests
         await Case("saved revision change cancels matched admission", RevisionChange);
         await Case("custom-room ticket loads latest profile without admission", CustomRoomLatest);
         await Case("personal names flow to party members and redeemed tickets without changing login names or readiness", PersonalNames);
+        await Case("social mailbox delivers friend requests, private chat, and real party invitations", SocialRoundTrip);
         await Case("wrong epoch, expired and mismatched identity slots never execute", UntrustedSlots);
         await Case("join response CAS conflict does not repeat side effects", JoinConflict);
         await Case("ticket response CAS conflict does not mint another ticket", TicketConflict);
         await Case("reused request ID with different command does not execute", RequestFingerprint);
         await Case("live worker lease refuses another worker", LeaseOwnership);
+        await Case("idle mailbox shares lease reads and wakes for consecutive commands", IdleMailbox);
+        await Case("new direct client and existing mailbox client share chat, queue and tickets", DirectLobbyRoundTrip);
         await Case("health expires independently of ownership and recovers after renewal", LeaseHealth);
         await Case("failed cloud lease writes never extend reported health", LeaseWriteFailure);
         await Case("initial cloud write must succeed before a worker becomes healthy", InitialLeaseWriteFailure);
@@ -157,9 +161,10 @@ static class BridgeTests
     {
         using var h = await Harness.Create();
         var issued = Body<GameTicketResponse>(await h.Command(Alice, "game-ticket"));
-        h.Cloud.SetProfile(Alice, 8, new Appearance(FaceId: 4), avatar: 6);
+        var wardrobe = new Appearance(FaceId: 4, WardrobeItems: 65536 + (2 << 6) + 1, WardrobeColors: 3 << 9);
+        h.Cloud.SetProfile(Alice, 8, wardrobe, avatar: 6);
         var result = await h.Tickets.RedeemAsync(issued.Ticket, default);
-        Check(result.Match == null && result.Revision == 8 && result.Appearance.FaceId == 4 && result.AvatarId == 6,
+        Check(result.Match == null && result.Revision == 8 && result.Appearance == wardrobe && result.AvatarId == 6,
             "Custom-room admission must refresh current appearance, revision and avatar without assigning a match.");
         await ApiFailure(401, async () => await h.Tickets.RedeemAsync(issued.Ticket, default));
     }
@@ -237,6 +242,85 @@ static class BridgeTests
         h.Cloud.Seed("bridge", new UgsPvpLease(1, new string('b', 32), h.Now + 15000));
         await Failure<InvalidOperationException>(() => h.Worker.ProcessOnceAsync(default));
         Check(!h.Worker.IsReady && !h.Worker.HasLiveLease, "Lost lease must revoke ownership and live-lease health together.");
+    }
+
+    private static async Task IdleMailbox()
+    {
+        using var h = await Harness.Create();
+        for (int second = 0; second < 60; second++)
+        {
+            h.Clock.Advance(TimeSpan.FromSeconds(1));
+            await h.Worker.PollIfDueAsync(default);
+        }
+        Check(h.Cloud.ListCalls == 12 && h.Cloud.BridgeReads == 1 && h.Cloud.BridgeWrites == 13,
+            "One minute idle needs 12 scans and renewals, plus only the initial lease acquisition.");
+        h.Submit(Alice, "current");
+        for (int second = 0; second < 5; second++)
+        {
+            h.Clock.Advance(TimeSpan.FromSeconds(1));
+            await h.Worker.PollIfDueAsync(default);
+        }
+        Check(h.Cloud.Slot(Alice).State == "done", "A request arriving just after an idle scan wakes on the next renewal.");
+        h.Submit(Alice, "create");
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        await h.Worker.PollIfDueAsync(default);
+        Check(h.Cloud.Slot(Alice).State == "done", "A second request uses the normal active polling interval.");
+        Check(h.Worker.LastRoom is { Operation: "create", MailboxWaitMs: 1000, Status: 200 } && h.Worker.LastChat == null,
+            "Room timing captures the wait from submission to pickup separately from worker processing.");
+    }
+
+    private static async Task DirectLobbyRoundTrip()
+    {
+        var sessionClock = new ManualClock();
+        using var lobby = new DirectLobby("127.0.0.1", 7443, sessionClock);
+        string path = Path.Combine(AppContext.BaseDirectory, "test-results", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        using var h = Harness.Unstarted(path, lobby);
+        await h.Worker.InitializeAsync(default);
+        var bootstrap = await h.Command(Alice, "current");
+        var grant = JsonDocument.Parse(bootstrap.Body).RootElement.GetProperty("directLobby").Deserialize<LobbyGrant>(Json)!;
+        Check(grant.Url == "https://127.0.0.1:7443/lobby/v1" && grant.Token.Length == 64 &&
+            grant.CertificateSha256 == lobby.Certificate.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256),
+            "Only the authenticated current response carries the session and boot certificate pin.");
+        Check(lobby.Allows("/lobby/v1/command", 7443, true) && !lobby.Allows("/health", 7443, true) &&
+            !lobby.Allows("/api/ugs/game-ticket/redeem", 7443, true) && !lobby.Allows("/lobby/v1/command", 5080, false),
+            "Only the two TLS lobby routes belong to the public listener.");
+        Task<UgsPvpResponse> Send(string op, object body, string? id = null, string? bearer = null) =>
+            lobby.RunAsync(bearer ?? grant.Token, new(id ?? Guid.NewGuid().ToString("N"), op, JsonSerializer.SerializeToElement(body, Json)), h.Worker, default);
+        object empty = new {};
+        await ApiFailure(401, async () => await Send("current", empty, bearer: new string('0', 64)));
+        int lists = h.Cloud.ListCalls;
+        var party = Body<PartyState>(await Send("create", empty)).Party!;
+        Check(h.Cloud.ListCalls == lists && h.Worker.LastRoom is { Transport: "direct", MailboxWaitMs: 0 },
+            "Direct creation performs no mailbox scan and reports zero mailbox wait.");
+        var joined = Body<PartyState>(await h.Command(Bravo, "join", new { partyId = party.Id }));
+        Check(joined.Party!.Members.Length == 2, "Mailbox client sees the direct client's party.");
+        await Send("social", new { command = "sync" });
+        await h.Command(Bravo, "social", new { command = "sync" });
+        await Send("social", new { command = "request", target = Bravo });
+        await h.Command(Bravo, "social", new { command = "accept", target = Alice });
+        var args = new { command = "send", target = Bravo, text = "混合版本私聊", nonce = Guid.NewGuid().ToString("N") };
+        string id = Guid.NewGuid().ToString("N");
+        var sent = await Send("social", args, id);
+        var snapshot = JsonDocument.Parse(sent.Body).RootElement.GetProperty("snapshot").Deserialize<SocialSnapshot>(Json)!;
+        Check(snapshot.Messages.Single().Text == args.text && sent == await Send("social", args, id) &&
+            h.Worker.LastChat is { Transport: "direct", Status: 200 }, "Send returns the confirmed message and replay returns the same result.");
+        await ApiFailure(409, async () => await Send("queue", empty, id));
+        Check(Body<SocialSnapshot>(await h.Command(Bravo, "social", new { command = "sync", target = Alice })).Messages.Single().Text == args.text,
+            "Mailbox recipient sees a message delivered directly.");
+        await h.Command(Bravo, "leave");
+        await h.Command(Bravo, "create");
+        await h.Command(Bravo, "queue");
+        Check((await Send("queue", empty)).Status == 200 && h.Worker.LastQueue is { Transport: "direct", Status: 200 },
+            "Queue submission is timed separately from the search for an opponent.");
+        h.Parties.MatchQueued([7777]);
+        var match = Body<PartyState>(await Send("current", empty)).Party!.Match!;
+        var legacyMatch = Body<PartyState>(await h.Command(Bravo, "current")).Party!.Match!;
+        Check(match.MatchId == legacyMatch.MatchId, "Both transports observe the same match.");
+        var ticket = Body<GameTicketResponse>(await Send("ticket", empty));
+        Check((await h.Tickets.RedeemAsync(ticket.Ticket, default)).AccountId == Alice, "Direct ticket redeems on the existing game server path.");
+        sessionClock.Advance(TimeSpan.FromMinutes(21));
+        await ApiFailure(401, async () => await Send("current", empty));
     }
 
     private static async Task LeaseHealth()
@@ -527,6 +611,86 @@ static class BridgeTests
         finally { await StopWorker(h.Worker); }
     }
 
+    private static async Task SocialRoundTrip()
+    {
+        string directory = Path.Combine(AppContext.BaseDirectory, "test-results", "fps-social-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        using var h = Harness.Unstarted(directory);
+        await h.Worker.InitializeAsync(default);
+        const string outsider = "player_Outside_003";
+        h.Cloud.SetUid(Alice, 111100001);
+        h.Cloud.SetUid(Bravo, 111100002);
+        h.Cloud.SetPersonal(Bravo, 1, "星野");
+        async Task<T> Read<T>(string player, object args) =>
+            JsonSerializer.Deserialize<T>((await h.Command(player, "social", args)).Body, Json)!;
+        Task<UgsPvpResponse> Write(string player, object args, int status = 200) => h.Command(player, "social", args, status);
+        string NewId() => Guid.NewGuid().ToString("N");
+
+        await Read<SocialSnapshot>(Alice, new { command = "sync" });
+        await Read<SocialSnapshot>(Bravo, new { command = "sync" });
+        int profileReads = h.Cloud.ProtectedReads;
+        var found = await Read<SocialContact[]>(Alice, new { command = "search", text = "111100002" });
+        Check(h.Cloud.ProtectedReads == profileReads, "Consecutive social display commands use the recently validated identity.");
+        h.Clock.Advance(TimeSpan.FromSeconds(31));
+        await Read<SocialSnapshot>(Alice, new { command = "sync" });
+        Check(h.Cloud.ProtectedReads == profileReads + 1, "Social display data is reloaded after 30 seconds.");
+        Check(found.Length == 1 && found[0].Player.Id == Bravo && found[0].Player.Name == "星野", "Lookup uses Protected UID and public display name.");
+        await Write(Alice, new { command = "send", target = Bravo, text = "无权限", nonce = NewId() }, 409);
+        await Write(Alice, new { command = "request", target = Bravo });
+        await Write(Alice, new { command = "accept", target = Bravo }, 409);
+        Check((await Read<SocialSnapshot>(Bravo, new { command = "sync" })).Requests == 1, "Recipient sees one request.");
+        await Write(Bravo, new { command = "reject", target = Alice });
+        Check((await Read<SocialSnapshot>(Bravo, new { command = "sync" })).Requests == 0, "Reject removes the incoming request.");
+        await Write(Alice, new { command = "request", target = Bravo });
+        await Write(Bravo, new { command = "accept", target = Alice });
+        var message = new { command = "send", target = Bravo, text = "下局一起吗？", nonce = NewId() };
+        await Write(Alice, message);
+        await Write(Alice, message);
+        Check(h.Worker.LastChat is { Operation: "send", Status: 200 }, "Last chat timing records the send without player or message data.");
+        Check((await Read<SocialSnapshot>(Bravo, new { command = "sync" })).Unread == 1, "Retry with the same message ID does not duplicate it.");
+        Check((await Read<SocialSnapshot>(outsider, new { command = "sync", target = Alice })).Messages.Length == 0, "A third player cannot read a private conversation.");
+        var opened = await Read<SocialSnapshot>(Bravo, new { command = "sync", target = Alice });
+        Check(opened.Unread == 0 && opened.Messages.Length == 1 && opened.Messages[0].Text == message.text, "Reading gets real Unicode text and acknowledges the unread message.");
+
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        string invite = NewId();
+        await Write(Alice, new { command = "invite", target = Bravo, nonce = invite });
+        var received = await Read<SocialSnapshot>(Bravo, new { command = "sync", target = Alice });
+        Check(received.Invites == 1 && received.Messages.Last().Invite?.State == "pending", "The invitation arrives as a structured card.");
+        await Write(outsider, new { command = "accept-invite", target = Alice, nonce = invite }, 409);
+        await Write(Bravo, new { command = "accept-invite", target = Alice, nonce = invite });
+        await Write(Bravo, new { command = "accept-invite", target = Alice, nonce = invite });
+        string partyId = h.Parties.SocialParty(Alice)!.Id;
+        Check(h.Parties.SocialParty(Bravo)?.Id == partyId && h.Parties.SocialParty(Alice)!.Members.Length == 2,
+            "Only the invitee joins the actual waiting PartyStore, exactly once.");
+        await Write(outsider, new { command = "team-send", target = partyId, text = "无权限", nonce = NewId() }, 409);
+        await Write(Bravo, new { command = "team-send", target = partyId, text = "准备好了", nonce = NewId() });
+        Check((await Read<SocialSnapshot>(Alice, new { command = "sync", target = "@team" })).Messages.Single().Text == "准备好了",
+            "A real teammate reads the team message.");
+        await h.Command(Bravo, "leave");
+        Check((await Read<SocialSnapshot>(Bravo, new { command = "sync", target = "@team" })).Messages.Length == 0, "Leaving revokes team history access.");
+        await Write(Bravo, new { command = "team-send", target = partyId, text = "已离队", nonce = NewId() }, 409);
+
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        string declined = NewId();
+        await Write(Alice, new { command = "invite", target = Bravo, nonce = declined });
+        await Write(Bravo, new { command = "decline-invite", target = Alice, nonce = declined });
+        await Write(Bravo, new { command = "accept-invite", target = Alice, nonce = declined }, 409);
+        h.Clock.Advance(TimeSpan.FromSeconds(1));
+        string expired = NewId();
+        await Write(Alice, new { command = "invite", target = Bravo, nonce = expired });
+        h.Clock.Advance(TimeSpan.FromSeconds(121));
+        await Write(Bravo, new { command = "accept-invite", target = Alice, nonce = expired }, 409);
+        var persisted = (SocialSnapshot)h.ReloadSocial()!.Execute(h.Profiles.GetCached(Bravo), "111100002", new("sync", Alice));
+        Check(persisted.Contacts.Single().Relation == "friend" && persisted.Messages.Any(m => m.Id == message.nonce),
+            "Friend relationships and private messages survive store reload.");
+        await Write(Bravo, new { command = "block", target = Alice });
+        await Write(Alice, new { command = "send", target = Bravo, text = "被屏蔽", nonce = NewId() }, 409);
+        Check((await Read<SocialSnapshot>(Alice, new { command = "sync", target = Bravo })).Messages.Length == 0, "Blocking removes access to the old conversation.");
+        File.Delete(Path.Combine(directory, "social-v1.json"));
+        Directory.Delete(directory);
+    }
+
     private sealed class Harness : IDisposable
     {
         public ManualClock Clock { get; } = new();
@@ -538,21 +702,33 @@ static class BridgeTests
         private int requestSequence;
         public long Now => Clock.GetUtcNow().ToUnixTimeMilliseconds();
         private readonly UgsBridgeOptions options = new() { Enabled = true, PollSeconds = 1 };
+        private readonly IConfiguration config;
+        private readonly Microsoft.AspNetCore.Hosting.IWebHostEnvironment? environment;
+        private readonly SocialStore? social;
 
-        private Harness()
+        private readonly DirectLobby? direct;
+        private Harness(string? socialPath = null, DirectLobby? direct = null)
         {
+            this.direct = direct;
             Cloud.SetProfile(Alice, 1); Cloud.SetProfile(Bravo, 1);
-            Profiles = new(Cloud);
-            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            Profiles = new(Cloud, Clock);
+            config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             { ["PvpMatchmaking:ServerAddress"] = "203.0.113.10", ["PvpMatchmaking:StartPort"] = "7777", ["PvpMatchmaking:ServerCount"] = "2" }).Build();
-            Parties = new(config, Clock); Tickets = new(Clock, Profiles, Parties); Worker = NewWorker();
+            Parties = new(config, Clock); Tickets = new(Clock, Profiles, Parties);
+            if (socialPath != null)
+                environment = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = socialPath }).Environment;
+            social = ReloadSocial();
+            Worker = NewWorker();
         }
         public static async Task<Harness> Create()
         {
             var value = new Harness(); await value.Worker.InitializeAsync(default); return value;
         }
-        public static Harness Unstarted() => new();
-        public UgsPvpWorker NewWorker() => new(options, Cloud, Profiles, Tickets, Parties, Clock, NullLogger<UgsPvpWorker>.Instance);
+        public static Harness Unstarted(string? socialPath = null, DirectLobby? direct = null) => new(socialPath, direct);
+        public SocialStore? ReloadSocial() => environment == null ? null : new(
+            new ConfigurationBuilder().AddConfiguration(config).AddInMemoryCollection(new Dictionary<string, string?>
+            { ["SocialStorePath"] = Path.Combine(environment.ContentRootPath, "social-v1.json") }).Build(), environment, Parties, Clock);
+        public UgsPvpWorker NewWorker() => new(options, Cloud, Profiles, Tickets, Parties, Clock, NullLogger<UgsPvpWorker>.Instance, social, direct);
         public UgsPvpSlot MakeSlot(string id, string command, object? args = null) => new(1, Worker.Epoch, id,
             (++requestSequence).ToString("x32"), id == Alice ? "Alice_01" : "Bravo_01", command,
             JsonSerializer.SerializeToElement(args ?? new { }, Json), Now, Now + 30000, "pending", null);
@@ -586,7 +762,7 @@ static class BridgeTests
         public void Advance(TimeSpan amount) => value += amount;
     }
 
-    private sealed class FakeCloud : IUgsCloudStore, IUgsPersonalCloudStore
+    private sealed class FakeCloud : IUgsCloudStore, IUgsSocialIdentityStore
     {
         private readonly SortedDictionary<string, UgsCloudItem> items = new(StringComparer.Ordinal);
         private long lockSequence;
@@ -602,10 +778,12 @@ static class BridgeTests
         public TaskCompletionSource<string>? HoldLeaseWriteCompletion { get; set; }
         public Dictionary<string, JsonElement> Protected { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, JsonElement> Personal { get; } = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, JsonElement> uid = new(StringComparer.Ordinal);
+        public void SetUid(string playerId, int value) => uid[playerId] = JsonSerializer.SerializeToElement(new { version = 1, playerId, uid = value }, Json);
+        public Task<JsonElement?> GetProtectedUidAsync(string playerId, CancellationToken cancel)
+            => Task.FromResult(uid.TryGetValue(playerId, out var value) ? (JsonElement?)value : null);
         public void SetPersonal(string id, int revision, string name)
             => Personal[id] = JsonSerializer.SerializeToElement(new { revision, personal = new { displayName = name, gender = 0, signature = "" } }, Json);
-        public Task<JsonElement?> GetProtectedPersonalAsync(string playerId, CancellationToken cancel)
-            => Task.FromResult(Personal.TryGetValue(playerId, out var value) ? (JsonElement?)value : null);
         public int PageSize { get; init; } = 20;
         public int ProtectedReads { get; private set; }
         public int ListCalls { get; private set; }
@@ -691,10 +869,12 @@ static class BridgeTests
             if (old.WriteLock != writeLock) throw new UgsCloudException(409);
             items.Remove(key); Deletes++; return Task.CompletedTask;
         }
-        public Task<JsonElement?> GetProtectedProfileAsync(string playerId, CancellationToken cancel)
+        public Task<UgsProfileData> GetProtectedProfileAsync(string playerId, CancellationToken cancel)
         {
             cancel.ThrowIfCancellationRequested(); ProtectedReads++;
-            return Task.FromResult(Protected.TryGetValue(playerId, out var value) ? (JsonElement?)value.Clone() : null);
+            return Task.FromResult(new UgsProfileData(
+                Protected.TryGetValue(playerId, out var profile) ? profile.Clone() : null,
+                Personal.TryGetValue(playerId, out var personal) ? personal.Clone() : null));
         }
     }
 }

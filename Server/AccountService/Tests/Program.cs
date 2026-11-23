@@ -76,8 +76,14 @@ Check(saved.status == 200 && saved.body["revision"]!.GetValue<int>() == 1, "Vali
 Check((await Send("PUT", "/api/profile", Profile(0), token)).status == 409, "Stale save cannot overwrite another device's profile");
 Check((await Send("PUT", "/api/profile", Profile(1, 255), token)).status == 400, "Invalid appearance value is rejected");
 Check((await Send("PUT", "/api/profile", Profile(1, sidearmSight: 5), token)).status == 400, "Incompatible pistol scope is rejected");
-var concurrent = await Task.WhenAll(Send("PUT", "/api/profile", Profile(1), token), Send("PUT", "/api/profile", Profile(1), token));
+var wardrobeRequest = System.Text.Json.JsonSerializer.SerializeToNode(Profile(1))!;
+wardrobeRequest["appearance"]!["wardrobeItems"] = 65536 + (2 << 6) + 1;
+wardrobeRequest["appearance"]!["wardrobeColors"] = 3 << 9;
+var concurrent = await Task.WhenAll(Send("PUT", "/api/profile", wardrobeRequest, token), Send("PUT", "/api/profile", wardrobeRequest, token));
 Check(concurrent.Count(r => r.status == 200) == 1 && concurrent.Count(r => r.status == 409) == 1, "Concurrent saves admit exactly one revision winner");
+var wardrobeRead = (await Send("GET", "/api/profile", token: token)).body["appearance"]!;
+Check(wardrobeRead["wardrobeItems"]!.GetValue<int>() == 65536 + (2 << 6) + 1 &&
+    wardrobeRead["wardrobeColors"]!.GetValue<int>() == (3 << 9), "Saved wardrobe slots and item colors round-trip over HTTP");
 Directory.CreateDirectory(database + ".pending");
 Check((await Send("PUT", "/api/profile", Profile(2), token)).status == 500, "A storage failure is reported instead of falsely acknowledging a save");
 Directory.Delete(database + ".pending");

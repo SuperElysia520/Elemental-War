@@ -1,6 +1,6 @@
 # GameLobby UI：MVC 与面板 Prefab
 
-2026-11-10 更新。正式客户端流程为 `Login/LoadingPanel 读取用户数据 → 加载 GameLobby/MainMenu → GameLobby/HomePanel → 组队/匹配 → GamePVP → GameLobby`。GameStart 保留为旧场景，不参与正式客户端或专服构建。
+2026-11-18 更新。正式客户端流程为 `Login/LoadingPanel 读取用户数据 → GameLobby/UnifiedHome → 组队/匹配 → GamePVP → GameLobby/UnifiedHome`。主菜单与大厅已按蓝白 A 方案合并，单机模式取消。GameStart 保留为旧场景，不参与正式构建。当前页面与资源细节见 [UnifiedLobbyUI.md](UnifiedLobbyUI.md)；下文涉及分离 MainMenu/Home/Party 的部分为迁移历史。
 
 ## 所有权与分工
 

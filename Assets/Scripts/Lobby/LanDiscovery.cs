@@ -14,7 +14,7 @@ public class LanDiscovery : MonoBehaviour
     public const int DiscoveryPort = 47777;
     public const int DedicatedDiscoveryPortOffset = 41000;
     // 5: UGS/雨云桥接队伍匹配及一次性票据；双方必须同时更新。
-    public const int AccountProtocolVersion = 5;
+    public const int AccountProtocolVersion = 6;
 
     // 广播/监听固定使用的标识头，用于过滤无关 UDP 包
     private const string MagicHeader = "FPS-LAN-DISC";

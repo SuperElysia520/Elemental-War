@@ -121,3 +121,22 @@ InitTestScene*.unity*
 /tmp/UgsBridgeStartupRecovery/
 /tmp/UgsPvpTlsProbe/
 /tmp/UgsPvpTlsPublish/
+/tmp/NameRules20261112/
+/tmp/FpsSocialBridge/
+/tmp/FpsSocialBridge.zip
+
+# Local UI feature validation captures (player builds, smoke runs, editor reports)
+/tmp/Settings20261116/
+/tmp/SettingsLegacy20261118/
+/tmp/SettingsLobby20261118/
+/tmp/SocialLobby20261118/
+/tmp/SocialRelease20261118/
+/tmp/UnifiedLobby20261118/
+/tmp/Wardrobe-20261119084531/
+/tmp/LobbyDirect-20261120/
+/tmp/LobbyLatency-20261120/
+/tmp/ProfileOverview20261119/
+/tmp/ProfilePanel20261110/
+/tmp/NameRules-cloud-baseline.txt
+/tmp/GitPush20261112/
+/tmp/.dotnet/

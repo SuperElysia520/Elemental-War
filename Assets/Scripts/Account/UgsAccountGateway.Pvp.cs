@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Security.Cryptography;
+using System.Text;
+using Newtonsoft.Json;
+using UnityEngine.Networking;
 using Unity.Services.CloudCode;
 
 public interface IUgsPvpGateway
@@ -43,15 +47,106 @@ public sealed partial class UgsAccountGateway
 {
     public const string PvpScript = "FpsPvp";
     private readonly SemaphoreSlim pvpGate = new SemaphoreSlim(1, 1);
+    private sealed class Grant { public string url, certificateSha256, token; public long expiresAt; }
+    private sealed class Bootstrap { public Grant directLobby; }
+    private Grant lobbyGrant;
+    private string lobbyPlayer;
+    private int probeGeneration;
+    private long nextProbe;
+    private static long NowMs => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+    public bool HasDirectLobby => lobbyGrant != null && lobbyGrant.expiresAt > NowMs + 5000 && lobbyPlayer == PlayerId && IsSignedIn;
+
+    private sealed class PinnedLobbyCertificate : CertificateHandler
+    {
+        private readonly string expected;
+        public PinnedLobbyCertificate(string expected) { this.expected = expected; }
+        protected override bool ValidateCertificate(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0) return false;
+            using (var hash = SHA256.Create())
+                return string.Equals(BitConverter.ToString(hash.ComputeHash(bytes)).Replace("-", ""), expected, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private void ResetDirectLobby()
+    {
+        probeGeneration++;
+        lobbyGrant = null;
+        lobbyPlayer = null;
+        nextProbe = 0;
+    }
+
+    private static async Task SendDirectRequest(UnityWebRequest request, Grant grant)
+    {
+        request.redirectLimit = 0;
+        request.certificateHandler = new PinnedLobbyCertificate(grant.certificateSha256);
+        var operation = request.SendWebRequest();
+        // Unity resumes the continuation on the player loop.
+        while (!operation.isDone) await Task.Yield();
+    }
+
+    private async Task ProbeDirectLobbyAsync(string player, string body)
+    {
+        if (NowMs < nextProbe || HasDirectLobby) return;
+        int generation = ++probeGeneration;
+        nextProbe = NowMs + 30000;
+        try
+        {
+            var grant = JsonConvert.DeserializeObject<Bootstrap>(body)?.directLobby;
+            if (grant == null || grant.expiresAt <= NowMs + 5000 || !Hex64(grant.certificateSha256) || !Hex64(grant.token) ||
+                !Uri.TryCreate(grant.url, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.AbsolutePath != "/lobby/v1" ||
+                uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0) return;
+            using (var probe = UnityWebRequest.Get(grant.url + "/ping"))
+            {
+                probe.timeout = 3;
+                await SendDirectRequest(probe, grant);
+                if (probe.result != UnityWebRequest.Result.Success || probe.downloadHandler.text != "fps-lobby-v1") return;
+            }
+            if (generation == probeGeneration && IsSignedIn && PlayerId == player)
+            {
+                lobbyGrant = grant;
+                lobbyPlayer = player;
+            }
+        }
+        catch (Exception) { /* Probe failure leaves existing mailbox access available. */ }
+    }
+
+    private static bool Hex64(string value) => value != null && value.Length == 64 && Array.TrueForAll(value.ToCharArray(), Uri.IsHexDigit);
+
+    private async Task<UgsPvpReply> CallDirectLobbyAsync(string player, string operation, Dictionary<string, object> args)
+    {
+        var grant = lobbyGrant;
+        string id = Guid.NewGuid().ToString("N");
+        using (var request = new UnityWebRequest(grant.url + "/command", "POST"))
+        {
+            request.timeout = 10;
+            string json = JsonConvert.SerializeObject(new { requestId = id, operation, args = args ?? new Dictionary<string, object>() });
+            request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("Authorization", "Bearer " + grant.token);
+            await SendDirectRequest(request, grant);
+            RequireSamePlayer(player);
+            if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.DataProcessingError ||
+                request.responseCode == 401 || request.responseCode < 200 || request.responseCode > 599)
+            {
+                if (ReferenceEquals(lobbyGrant, grant)) ResetDirectLobby();
+                throw new UgsPvpRequestException(UgsPvpFailureKind.TransportError, (int)request.responseCode, "大厅直连中断，请刷新状态后重试。");
+            }
+            return new UgsPvpReply { ok = true, state = "done", requestId = id, status = (int)request.responseCode, body = request.downloadHandler.text };
+        }
+    }
 
     public async Task<UgsPvpReply> ExecutePvpAsync(string operation, string username, Dictionary<string, object> args)
     {
         RequireSession();
         string player = PlayerId;
+        if (HasDirectLobby) return await CallDirectLobbyAsync(player, operation, args);
         await pvpGate.WaitAsync();
         try
         {
             RequireSamePlayer(player);
+            if (HasDirectLobby) return await CallDirectLobbyAsync(player, operation, args);
             string requestId = Guid.NewGuid().ToString("N");
             var parameters = new Dictionary<string, object>
             {
@@ -73,6 +168,7 @@ public sealed partial class UgsAccountGateway
                 {
                     if (reply.status < 200 || reply.status > 599 || reply.body == null || reply.body.Length > 65536)
                         throw new UgsPvpRequestException(UgsPvpFailureKind.InvalidResponse, reply.status, "PvP 返回数据不完整，请重试。");
+                    if (operation == "current" && reply.status == 200) _ = ProbeDirectLobbyAsync(player, reply.body);
                     return reply;
                 }
                 if (reply.state != "pending") throw new UgsPvpRequestException(UgsPvpFailureKind.InvalidResponse, reply.status, "PvP 请求状态无效，请重试。");

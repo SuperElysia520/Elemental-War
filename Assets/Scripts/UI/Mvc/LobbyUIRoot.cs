@@ -9,6 +9,8 @@ namespace FPS.UI
     {
         public LobbyPageView[] pages = new LobbyPageView[0];
         public PartyPanelView partyView;
+        public UnifiedLobbyView homeView;
+        public GameObject unifiedEnvironment;
         public RoomListView roomsView;
         public CustomRoomView customRoomView;
         public CustomizationView customizationView;
@@ -20,9 +22,17 @@ namespace FPS.UI
         public LobbyIdentityView identity;
         public RifleGirlAppearance[] partyCharacters = new RifleGirlAppearance[0];
         private LobbyController controller;
+        public WardrobeView Wardrobe { get; private set; }
+        private Camera stationCamera;
+        private ProfileOverviewLayout profileLayout;
+        internal LobbySocialView Social { get; private set; }
         public LobbyController Controller => controller;
         private void Awake()
         {
+            Wardrobe = Array.Find(pages,page=>page is WardrobeView) as WardrobeView;
+            if (unifiedEnvironment != null) stationCamera = unifiedEnvironment.GetComponentInChildren<Camera>(true);
+            foreach (var page in pages)
+                if (page is ProfilePanelView) profileLayout = page.GetComponent<ProfileOverviewLayout>();
             foreach (var page in pages) page.Show(false);
             messageDialog.Hide(); confirmDialog.Hide();
         }
@@ -40,6 +50,12 @@ namespace FPS.UI
             while (!loader.IsReady) yield return null;
             var account = AccountClient.EnsureInstance();
             var party = PartyLobbyClient.EnsureInstance();
+            if (homeView != null)
+            {
+                var settings = Array.Find(pages, page => page is FPS.Settings.SettingsPanelView) as FPS.Settings.SettingsPanelView;
+                Social = gameObject.AddComponent<LobbySocialView>();
+                Social.Initialize(account, party, homeView, avatars, settings?.titleText?.font);
+            }
             if (LobbyManager.Instance == null) throw new InvalidOperationException("GameLobby requires its authored network root.");
             controller = new LobbyController(this, account, party, LobbyManager.Instance);
             controller.Initialize();
@@ -49,18 +65,24 @@ namespace FPS.UI
         private void OnDestroy() { controller?.Dispose(); controller = null; }
         public void Present(LobbyModel model, PlayerProfileData profile, string status, bool blocked)
         {
+            bool home = model.Page == LobbyPage.Home;
+            bool profilePortrait = model.Page == LobbyPage.Profile && profileLayout != null && stationCamera != null && homeCharacter != null;
+            bool stationVisible = home || profilePortrait || model.Page == LobbyPage.Wardrobe;
             bool main = model.Page == LobbyPage.MainMenu || model.Page == LobbyPage.CustomRoom || model.Page == LobbyPage.Customization;
+            if (unifiedEnvironment != null) unifiedEnvironment.SetActive(stationVisible);
             foreach (var item in mainEnvironment) if (item != null) item.SetActive(main);
-            foreach (var item in lobbyEnvironment) if (item != null) item.SetActive(!main);
+            foreach (var item in lobbyEnvironment) if (item != null) item.SetActive(!main && !stationVisible);
             foreach (var item in mainDecorations) if (item != null) item.SetActive(main && model.Page != LobbyPage.Customization);
             if (mainCharacter != null) mainCharacter.SetActive(main && model.Page != LobbyPage.Customization);
-            if (identity != null) identity.Render(profile, !main);
-            if (homeCharacter != null) homeCharacter.SetActive(model.Page != LobbyPage.Party && model.Page != LobbyPage.Customization);
+            if (identity != null) identity.Render(profile, !main && !stationVisible);
+            if (homeCharacter != null) homeCharacter.SetActive(home || profilePortrait);
             foreach (var page in pages)
             {
                 page.Show(page.page == model.Page);
                 if (page.page == model.Page) page.Render(profile, avatars, status, blocked);
             }
+            if (profilePortrait) profileLayout.FrameCharacter(stationCamera, homeCharacter.transform);
+            else if (home && homeView != null) homeView.GetComponent<UnifiedLobbyLayout>()?.BindCamera(stationCamera);
         }
         public void PresentPartyCharacters(PartyData party)
         {

@@ -45,7 +45,8 @@ public static class ProfilePanelSetup
             view.maleToggle = At<UnityEngine.UI.Toggle>(t, "InformationPanel/Sex/boy");
             view.femaleToggle = At<UnityEngine.UI.Toggle>(t, "InformationPanel/Sex/girl");
             view.maleToggle.SetIsOnWithoutNotify(false); view.femaleToggle.SetIsOnWithoutNotify(false);
-            view.genderIcon = At<UnityEngine.UI.Image>(t, "FirstPagePanel/UP/SexIcon");
+            var nameLine = t.Find("FirstPagePanel/UP/NameLine") ?? t.Find("FirstPagePanel/UP");
+            view.genderIcon = At<UnityEngine.UI.Image>(nameLine, "SexIcon");
             view.maleIcon = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Resource/UI/Profile/Boy.png");
             view.femaleIcon = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Resource/UI/Profile/Girl.png");
             view.genderIcon.raycastTarget = false;
@@ -65,7 +66,12 @@ public static class ProfilePanelSetup
 
     private static T At<T>(Transform root, string path) where T : Component
         => root.Find(path)?.GetComponent<T>() ?? throw new InvalidOperationException("Missing " + typeof(T).Name + ": " + path);
-    private static UnityEngine.UI.Text Stat(Transform root, string name) => At<UnityEngine.UI.Text>(root, "FirstPagePanel/Down/DataPanel/" + name + "/number");
+    private static UnityEngine.UI.Text Stat(Transform root, string name)
+    {
+        var data = root.Find("FirstPagePanel/Down/DataPanel");
+        var cell = data.GetComponentsInChildren<RectTransform>(true).Single(rect => rect.name == name);
+        return At<UnityEngine.UI.Text>(cell, "number");
+    }
 
     private static void ConfigureScroll(ProfilePanelView view)
     {

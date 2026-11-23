@@ -42,6 +42,7 @@ public static class LobbyMvcValidation
     [MenuItem("Tools/FPS/Lobby/Validate MVC Runtime (Offline)")]
     public static void Run()
     {
+        if (UnityEngine.Object.FindObjectOfType<LobbyUIRoot>(true)?.homeView != null) { UnifiedLobbyValidation.Run(); return; }
         if (Running || EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isCompiling)
             throw new InvalidOperationException("Wait until the Editor has stopped and compiled.");
         var scene = SceneManager.GetActiveScene();
@@ -70,6 +71,7 @@ public static class LobbyMvcValidation
     }
     public static void Audit()
     {
+        if (UnityEngine.Object.FindObjectOfType<LobbyUIRoot>(true)?.homeView != null) { UnifiedLobbyBuilder.Validate(); return; }
         report = new Report(); ValidateAssets(); report.success = report.errors.Count == 0;
         File.WriteAllText("tmp/LobbyMvc/asset-validation.json", JsonUtility.ToJson(report, true));
     }

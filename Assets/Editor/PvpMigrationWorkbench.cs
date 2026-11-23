@@ -52,12 +52,16 @@ public static class PvpMigrationWorkbench
             {
                 case "status": break;
                 case "build-initial-name-client": Invoke("InitialNameReleaseBuild", "BuildClient"); break;
+                case "build-direct-lobby-client": Invoke("InitialNameReleaseBuild", "BuildDirectLobbyClient"); break;
+                case "validate-direct-lobby-tls": DirectLobbyTransportValidation.Run(); break;
                 case "build-initial-name-server": Invoke("InitialNameReleaseBuild", "BuildServer"); break;
                 case "setup-initial-name": Invoke("InitialNameSetup", "Apply"); break;
                 case "setup-profile-panel": Invoke("ProfilePanelSetup", "Apply"); break;
                 case "exit-play-mode": EditorApplication.ExitPlaymode(); break;
                 case "inspect-open-scene": InspectOpenScenes(result); break;
                 case "audit-lobby-layout": Invoke("LobbyLayoutAudit", "Run"); break;
+                case "attach-wardrobe": Invoke("WardrobeBuilder", "AttachPage"); break;
+                case "build-wardrobe": Invoke("WardrobeBuilder", "Build"); break;
                 case "audit-lobby-mvc": Invoke("LobbyMvcAudit", "Baseline"); break;
                 case "setup-lobby-mvc": Invoke("LobbyMvcSceneSetup", "Apply"); break;
                 case "audit-lobby-mvc-assets": Invoke("LobbyMvcValidation", "Audit"); break;

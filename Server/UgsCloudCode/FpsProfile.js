@@ -37,7 +37,18 @@ function integer(value, maximum) {
   return Number.isInteger(value) && value >= 0 && value <= maximum;
 }
 function validAppearance(value) {
-  return fields(value, ["outfitId", "faceId", "clothColorId", "hairColorId", "hat", "accessories"]) &&
+  const legacy = ["outfitId", "faceId", "clothColorId", "hairColorId", "hat", "accessories"];
+  const extended = fields(value, [...legacy, "wardrobeItems", "wardrobeColors"]);
+  if (extended) {
+    const { wardrobeItems: items, wardrobeColors: colors } = value;
+    if (!integer(items, 131071) || !integer(colors, 16777215)) return false;
+    if (items === 0 ? colors !== 0 : items < 65536) return false;
+    for (let i = 0; i < 8; i++) {
+      if (((items >> (2*i)) & 3) > (i === 3 ? 3 : 1) ||
+          ((colors >> (3*i)) & 7) > (i === 0 ? 3 : 4)) return false;
+    }
+  }
+  return (extended || fields(value, legacy)) &&
     integer(value.outfitId, 2) && integer(value.faceId, 4) &&
     integer(value.clothColorId, 4) && integer(value.hairColorId, 3) &&
     typeof value.hat === "boolean" && typeof value.accessories === "boolean" &&

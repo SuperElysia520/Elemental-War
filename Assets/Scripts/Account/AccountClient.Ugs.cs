@@ -5,6 +5,7 @@ public sealed partial class AccountClient
 {
     internal static Func<IUgsAccountGateway> UgsGatewayFactory;
     private IUgsAccountGateway ugs;
+    public bool HasDirectLobby => ugs is UgsAccountGateway gateway && gateway.HasDirectLobby;
     private bool ugsDisposed;
     private int ugsSessionGeneration;
     private bool HasUgsSession => !ugsDisposed && ugs != null && ugs.IsSignedIn && !string.IsNullOrEmpty(AccountId) && ugs.PlayerId == AccountId;

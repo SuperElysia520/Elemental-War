@@ -5,6 +5,7 @@ using Fps.AccountService;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddJsonFile("lobby-direct.json", optional: true, reloadOnChange: false);
 // Only the path crosses the process boundary; service-account credentials stay
 // in an external ACL-restricted file installed on the Rainyun server.
 string? ugsConfigPath = Environment.GetEnvironmentVariable("FPS_UGS_PVP_CONFIG");
@@ -23,10 +24,23 @@ if (!string.IsNullOrWhiteSpace(ugsConfigPath))
     builder.Configuration.AddConfiguration(external);
 }
 ugsOptions.Validate();
+DirectLobby? directLobby = null;
 if (ugsOptions.Enabled)
 {
     if (string.IsNullOrWhiteSpace(ugsConfigPath)) throw new InvalidOperationException("UGS bridge credentials require FPS_UGS_PVP_CONFIG external configuration.");
-    builder.WebHost.UseUrls("http://127.0.0.1:5080");
+    int port = builder.Configuration.GetValue<int>("LobbyDirect:Port");
+    if (port == 0) builder.WebHost.UseUrls("http://127.0.0.1:5080");
+    else
+    {
+        var lobby = new DirectLobby(builder.Configuration["PvpMatchmaking:ServerAddress"] ?? "", port, TimeProvider.System);
+        directLobby = lobby;
+        builder.Services.AddSingleton(lobby);
+        builder.WebHost.ConfigureKestrel(k =>
+        {
+            k.Listen(IPAddress.Loopback, 5080);
+            k.ListenAnyIP(lobby.Port, endpoint => endpoint.UseHttps(lobby.Certificate));
+        });
+    }
 }
 builder.Services.AddSingleton(ugsOptions);
 // Console capture works under a low-privilege service account without Windows Event Log permissions.
@@ -38,6 +52,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddSingleton<AccountStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<PartyStore>();
+builder.Services.AddSingleton<SocialStore>();
 builder.Services.AddHostedService<PartyMatchmaker>();
 if (ugsOptions.Enabled)
 {
@@ -80,8 +95,8 @@ builder.Services.AddRateLimiter(options =>
             new ApiError("rate_limited", "请求过于频繁，请稍后再试。"), token);
     };
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-        RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            _ => new FixedWindowRateLimiterOptions { PermitLimit = 180, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        RateLimitPartition.GetFixedWindowLimiter($"{context.Connection.LocalPort}/{context.Connection.RemoteIpAddress}",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = context.Connection.LocalPort == directLobby?.Port ? 1800 : 180, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("credentials", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
@@ -99,8 +114,14 @@ app.Use(async (context, next) =>
     context.Response.Headers.CacheControl = "no-store";
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     bool loopback = context.Connection.RemoteIpAddress != null && IPAddress.IsLoopback(context.Connection.RemoteIpAddress);
+    bool publicListener = directLobby != null && context.Connection.LocalPort == directLobby.Port;
+    if (directLobby != null && !directLobby.Allows(context.Request.Path, context.Connection.LocalPort, context.Request.IsHttps))
+    {
+        context.Response.StatusCode = 404;
+        return;
+    }
     bool ugsServerEndpoint = context.Request.Path.StartsWithSegments("/api/ugs");
-    if ((ugsServerEndpoint || ugsOptions.Enabled) && !loopback)
+    if ((ugsServerEndpoint || ugsOptions.Enabled) && !loopback && !publicListener)
     {
         context.Response.StatusCode = 403;
         await context.Response.WriteAsJsonAsync(new ApiError("local_server_only", "此接口仅供同机游戏服务器使用。"));
@@ -141,8 +162,14 @@ app.Use(async (context, next) =>
     }
 });
 app.UseRateLimiter();
+directLobby?.MapEndpoints(app);
 app.MapAccountHealthEndpoint();
 if (ugsOptions.Enabled) app.MapUgsPvpEndpoints();
+app.MapPost("/api/social", (SocialRequest request, HttpContext context, AccountStore accounts, SocialStore social) =>
+{
+    var actor = accounts.GetProfile(ReadToken(context));
+    return social.Execute(actor, actor.AccountId, request);
+});
 app.MapPost("/api/auth/register", (Credentials body, AccountStore store) => store.Register(body)).RequireRateLimiting("credentials");
 app.MapPost("/api/auth/register-account", (Credentials body, AccountStore store) => store.RegisterAccount(body)).RequireRateLimiting("credentials");
 app.MapPost("/api/auth/check-registration", (RegistrationCheckRequest body, AccountStore store) => store.CheckRegistration(body)).RequireRateLimiting("registration-check");

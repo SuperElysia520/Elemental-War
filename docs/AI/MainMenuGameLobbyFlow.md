@@ -1,5 +1,7 @@
 # 主菜单与手工联机大厅接入
 
+> 2026-11-18：初始主菜单与大厅已合并，单机模式取消。当前实现见 [UnifiedLobbyUI.md](UnifiedLobbyUI.md)，下文为历史接入记录。
+
 > 2026-10-05 更新：本文记录上一轮接入。大厅开始游戏、房间列表、准备及返回行为已由 [LobbyMatchmakingFlow.md](LobbyMatchmakingFlow.md) 替代；旧 LobbyMenuUI 保留用于自定义 PVP 与 PVE。
 
 日期：2026-10-03。用户确认：`GameStart → GameLobby → GamePVP → GameLobby`；大厅主页由用户手工制作，开始游戏打开现有房间列表，角色、服装和枪械配装暂时沿用原界面。比赛结束显示结算后全员自动返回并保留原房间。

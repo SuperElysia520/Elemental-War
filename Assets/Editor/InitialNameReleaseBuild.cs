@@ -22,17 +22,18 @@ public static class InitialNameReleaseBuild
 
     public static void BuildClient() => Build(false);
     public static void BuildServer() => Build(true);
+    public static void BuildDirectLobbyClient() => Build(false, "tmp/LobbyDirect-20261120", "tmp/LobbyDirect-20261120");
 
-    private static void Build(bool server)
+    private static void Build(bool server, string outputRoot = Output, string evidence = Evidence)
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode) throw new InvalidOperationException("Exit Play Mode before packaging.");
-        Directory.CreateDirectory(Evidence);
+        Directory.CreateDirectory(evidence);
         string[] scenes = GameFlowBuildScenes.Get(server);
         for (int i = 0; i < SceneManager.sceneCount; i++)
         {
             var scene = SceneManager.GetSceneAt(i);
             if (!scene.isDirty || !scenes.Contains(scene.path)) continue;
-            string backup = Evidence + "/" + scene.name;
+            string backup = evidence + "/" + scene.name;
             if (!File.Exists(backup + ".disk-before.unity")) File.Copy(scene.path, backup + ".disk-before.unity");
             if (!File.Exists(backup + ".open-before.unity") && !EditorSceneManager.SaveScene(scene, backup + ".open-before.unity", true))
                 throw new IOException("Could not back up the open scene: " + scene.path);
@@ -43,7 +44,7 @@ public static class InitialNameReleaseBuild
         var previousSubtarget = EditorUserBuildSettings.standaloneBuildSubtarget;
         var previousHttp = PlayerSettings.insecureHttpOption;
         string folder = server ? "Server" : "Client";
-        string output = Output + "/" + folder + "/" + (server ? "FPS_PVP_Server.exe" : "FPS.exe");
+        string output = outputRoot + "/" + folder + "/" + (server ? "FPS_PVP_Server.exe" : "FPS.exe");
         Directory.CreateDirectory(Path.GetDirectoryName(output));
         try
         {
@@ -63,8 +64,8 @@ public static class InitialNameReleaseBuild
                 warnings = messages.Where(message => message.type == LogType.Warning).Select(message => message.content).Distinct().ToArray(),
                 errors = messages.Where(message => message.type == LogType.Error || message.type == LogType.Exception || message.type == LogType.Assert).Select(message => message.content).Distinct().ToArray()
             };
-            File.WriteAllText(Evidence + "/build-" + folder.ToLowerInvariant() + ".json", JsonUtility.ToJson(result, true));
-            if (!result.success) throw new InvalidOperationException("Windows " + folder + " build failed; inspect " + Evidence);
+            File.WriteAllText(evidence + "/build-" + folder.ToLowerInvariant() + ".json", JsonUtility.ToJson(result, true));
+            if (!result.success) throw new InvalidOperationException("Windows " + folder + " build failed; inspect " + evidence);
         }
         finally
         {

@@ -29,6 +29,11 @@ public sealed class RifleGirlAppearance : MonoBehaviour
     [SerializeField] private Mesh[] firstPersonBodyTemplates;
     [SerializeField] private CharacterAppearanceData currentAppearance;
 
+    private WardrobeRenderer wardrobe;
+    private bool usingWardrobe;
+#if UNITY_EDITOR
+    public Renderer WardrobeThumbnail(ClothingSlot slot, int item) => wardrobe?.Thumbnail(slot,item);
+#endif
     private ShadowCastingMode[] originalShadowModes;
     private bool localFirstPerson;
     private Mesh[] privateFirstPersonMeshes;
@@ -46,6 +51,7 @@ public sealed class RifleGirlAppearance : MonoBehaviour
     public void Apply(CharacterAppearanceData data)
     {
         currentAppearance = data.Sanitized();
+        if (usingWardrobe && currentAppearance.wardrobeItems == 0) wardrobe.Restore();
         SetExclusive(outfitRoots, currentAppearance.outfitId);
         SetExclusive(faceRoots, currentAppearance.faceId);
 
@@ -70,6 +76,17 @@ public sealed class RifleGirlAppearance : MonoBehaviour
         if (hairRenderer != null && hairMaterial != null)
             hairRenderer.sharedMaterial = hairMaterial;
 
+        if (currentAppearance.wardrobeItems != 0)
+        {
+            if (wardrobe == null)
+            {
+                var geometry = Resources.Load<WardrobeGeometry>("Customization/WardrobeGeometry");
+                if (geometry != null) wardrobe = new WardrobeRenderer(transform,outfitRoots,accessoryRoot,geometry);
+            }
+            wardrobe?.Apply(currentAppearance,clothMaterials,hairMaterials);
+            accessoryRoot.SetActive(WardrobeItems.Item(currentAppearance,ClothingSlot.Accessory) != 0);
+        }
+        usingWardrobe = wardrobe != null && currentAppearance.wardrobeItems != 0;
         // sharedMaterial 只切换该 Renderer 的引用，绝不改共享材质属性或分配材质副本。
         ApplyFirstPersonVisibility();
     }

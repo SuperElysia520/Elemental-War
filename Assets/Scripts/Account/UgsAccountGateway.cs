@@ -156,6 +156,7 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
     public void SignOut() => SignOutOwnedSession();
     private void SignOutOwnedSession()
     {
+        ResetDirectLobby();
         PublicUid = 0;
         HasLegacyUid = false;
         if (owner != this) return;
@@ -200,6 +201,9 @@ public sealed partial class UgsAccountGateway : IUgsAccountGateway, IUgsPvpGatew
             RequireFields(json, new[] { "appearance", "loadout" }, JTokenType.Object);
             RequireFields(json, new[] { "match" }, JTokenType.Null);
             RequireFields((JObject)json["appearance"], new[] { "outfitId", "faceId", "clothColorId", "hairColorId" }, JTokenType.Integer);
+            var appearanceJson = (JObject)json["appearance"];
+            if (appearanceJson["wardrobeItems"] != null || appearanceJson["wardrobeColors"] != null)
+                RequireFields(appearanceJson, new[] { "wardrobeItems", "wardrobeColors" }, JTokenType.Integer);
             RequireFields((JObject)json["appearance"], new[] { "hat", "accessories" }, JTokenType.Boolean);
             RequireFields((JObject)json["loadout"], new[] { "primaryWeaponId", "primarySightId", "sidearmSightId" }, JTokenType.Integer);
             var profile = json.ToObject<PlayerProfileData>();

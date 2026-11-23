@@ -4,9 +4,19 @@ namespace Fps.AccountService;
 
 // Keep these JSON fields compatible with Assets/Scripts/Customization/PlayerProfileData.cs.
 public sealed record Appearance(byte OutfitId = 0, byte FaceId = 0,
-    byte ClothColorId = 0, byte HairColorId = 0, bool Hat = true, bool Accessories = true)
+    byte ClothColorId = 0, byte HairColorId = 0, bool Hat = true, bool Accessories = true,
+    int WardrobeItems = 0, int WardrobeColors = 0)
 {
-    [JsonIgnore] public bool IsValid => OutfitId <= 2 && FaceId <= 4 && ClothColorId <= 4 && HairColorId <= 3 && (OutfitId != 2 || !Accessories);
+    [JsonIgnore] public bool IsValid => OutfitId <= 2 && FaceId <= 4 && ClothColorId <= 4 && HairColorId <= 3 && (OutfitId != 2 || !Accessories) && ValidWardrobe();
+    private bool ValidWardrobe()
+    {
+        if (WardrobeItems == 0) return WardrobeColors == 0;
+        if ((WardrobeItems >> 16) != 1 || (WardrobeColors >> 24) != 0) return false;
+        for (int i = 0; i < 8; i++)
+            if (((WardrobeItems >> (2*i)) & 3) > (i == 3 ? 3 : 1) ||
+                ((WardrobeColors >> (3*i)) & 7) > (i == 0 ? 3 : 4)) return false;
+        return true;
+    }
 }
 
 public sealed record Loadout(byte PrimaryWeaponId = 0, byte PrimarySightId = 0, byte SidearmSightId = 0)
